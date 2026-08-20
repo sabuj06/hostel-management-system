@@ -31,7 +31,5 @@
     </div>
 </div>
 
-<div class="alert alert-info mt-4">
-    Phase 1 (Authentication + Roles) is now live. Room/Bed Management, Fees, Complaints, and other features will be added in the upcoming phases.
-</div>
+
 @endsection

@@ -28,6 +28,14 @@
                     <i class="bi bi-speedometer2 me-2"></i> Dashboard
                 </a>
             </li>
+            
+            @if(auth()->user()?->hasRole('admin') || auth()->user()?->hasRole('warden'))
+            <li class="nav-item">
+                <a class="nav-link {{ request()->routeIs('reports.*') ? 'active' : '' }}" href="{{ route('reports.index') }}">
+                    <i class="bi bi-bar-chart-line me-2"></i> Reports & Analytics
+                </a>
+            </li>
+            @endif
             @if(auth()->user()?->hasRole('admin'))
             <li class="nav-item">
                 <a class="nav-link" href="#"><i class="bi bi-people me-2"></i> Users & Roles</a>
@@ -78,7 +86,16 @@
                     <i class="bi bi-cash-coin me-2"></i> Fee Structures
                 </a>
             </li>
-            <li class="nav-item"><a class="nav-link" href="#"><i class="bi bi-exclamation-triangle me-2"></i> Complaints</a></li>
+            <li class="nav-item">
+                <a class="nav-link {{ request()->routeIs('complaints.*') ? 'active' : '' }}" href="{{ route('complaints.index') }}">
+                    <i class="bi bi-exclamation-triangle me-2"></i> Complaints
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {{ request()->routeIs('visitors.*') ? 'active' : '' }}" href="{{ route('visitors.index') }}">
+                    <i class="bi bi-person-walking me-2"></i> Visitors
+                </a>
+            </li>
         </ul>
     </nav>
 

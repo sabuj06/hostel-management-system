@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Admin\BedController;
 use App\Http\Controllers\Admin\BlockController;
+use App\Http\Controllers\Admin\ComplaintController;
 use App\Http\Controllers\Admin\FeeStructureController;
 use App\Http\Controllers\Admin\FloorController;
 use App\Http\Controllers\Admin\GuardianController;
@@ -14,6 +15,8 @@ use App\Http\Controllers\Admin\StudentController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\DashboardController;
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\Admin\VisitorController;
+use App\Http\Controllers\Admin\ReportController;
 
 Route::get('/', fn () => redirect()->route('login'));
 
@@ -68,5 +71,33 @@ Route::middleware('auth')->group(function () {
 
         Route::post('/invoices/{invoice}/payments', [PaymentController::class, 'store'])->name('payments.store');
         Route::delete('/payments/{payment}', [PaymentController::class, 'destroy'])->name('payments.destroy');
+    });
+
+    // Phase 5 — Visitor Management (admin + warden + staff)
+    Route::middleware('role:admin,warden,staff')->group(function () {
+        Route::get('/visitors', [VisitorController::class, 'index'])->name('visitors.index');
+        Route::get('/visitors/create', [VisitorController::class, 'create'])->name('visitors.create');
+        Route::post('/visitors', [VisitorController::class, 'store'])->name('visitors.store');
+        Route::post('/visitors/{visitor}/checkout', [VisitorController::class, 'checkout'])->name('visitors.checkout');
+        Route::get('/visitors-search-students', [VisitorController::class, 'searchStudents'])->name('visitors.search-students');
+    });
+
+    // Phase 5 — Complaint Management (admin + warden + staff)
+    Route::middleware('role:admin,warden,staff')->group(function () {
+        Route::get('/complaints', [ComplaintController::class, 'index'])->name('complaints.index');
+        Route::get('/complaints/create', [ComplaintController::class, 'create'])->name('complaints.create');
+        Route::post('/complaints', [ComplaintController::class, 'store'])->name('complaints.store');
+        Route::get('/complaints/{complaint}', [ComplaintController::class, 'show'])->name('complaints.show');
+
+        Route::patch('/complaints/{complaint}/status', [ComplaintController::class, 'updateStatus'])->name('complaints.status');
+        Route::patch('/complaints/{complaint}/assign', [ComplaintController::class, 'assign'])->name('complaints.assign');
+        Route::post('/complaints/{complaint}/comments', [ComplaintController::class, 'addComment'])->name('complaints.comments.store');
+        Route::post('/complaints/suggest', [ComplaintController::class, 'suggest'])->name('complaints.suggest');
+    });
+
+    // Phase 6 — Reports (admin + warden only)
+    Route::middleware('role:admin,warden')->group(function () {
+        Route::get('/reports', [ReportController::class, 'index'])
+            ->name('reports.index');
     });
 });
