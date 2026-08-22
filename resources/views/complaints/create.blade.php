@@ -6,6 +6,23 @@
 @section('content')
 <div class="row g-3">
     <div class="col-md-7">
+        <!-- Quick Note -> AI generates Title + Description -->
+        <div class="card shadow-sm border-0 mb-3 border-start border-4 border-primary">
+            <div class="card-body">
+                <h6 class="mb-2"><i class="bi bi-stars text-primary"></i> Quick Note (optional)</h6>
+                <p class="text-muted small mb-2">
+                    Paste or type whatever the student told you, however rough — the assistant will draft a proper title and description below.
+                </p>
+                <div class="d-flex gap-2">
+                    <textarea id="quick_note" class="form-control" rows="2" placeholder="e.g. student bolche fan e problem, 3 din dhore ghurtese na thik moto"></textarea>
+                    <button type="button" class="btn btn-primary flex-shrink-0" id="generate-btn">
+                        <i class="bi bi-magic"></i> Generate
+                    </button>
+                </div>
+                <div id="generate-error" class="text-danger small mt-2" style="display:none;"></div>
+            </div>
+        </div>
+
         <div class="card shadow-sm border-0">
             <div class="card-body">
                 @if ($errors->any())
@@ -167,6 +184,46 @@
             setTimeout(() => {
                 $(this).html('<i class="bi bi-check2"></i> Apply Suggestion').prop('disabled', false);
             }, 1500);
+        });
+
+        // "Generate" button: turn the rough quick note into Title + Description
+        $('#generate-btn').on('click', function () {
+            const note = $('#quick_note').val().trim();
+            const $btn = $(this);
+            $('#generate-error').hide();
+
+            if (note.length < 5) {
+                $('#generate-error').text('Please write a bit more detail before generating.').show();
+                return;
+            }
+
+            $btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Generating...');
+
+            $.ajax({
+                url: '{{ route('complaints.ai-generate') }}',
+                method: 'POST',
+                data: { _token: '{{ csrf_token() }}', note: note },
+                success: function (res) {
+                    $('#title').val(res.suggested_title);
+                    $('#description').val(res.suggested_description);
+                    lastSuggestion = res;
+
+                    $('#ai-category').text(res.suggested_category);
+                    $('#ai-confidence').text(res.category_confidence > 0 ? res.category_confidence + '% match' : 'low confidence');
+                    $('#ai-priority-badge')
+                        .attr('class', 'badge text-capitalize ' + (priorityColors[res.suggested_priority] || 'bg-secondary'))
+                        .text(res.suggested_priority);
+                    $('#ai-reason').text(res.priority_reason);
+                    $('#ai-placeholder').hide();
+                    $('#ai-box').show();
+                },
+                error: function () {
+                    $('#generate-error').text('Could not generate right now. Please fill the title/description manually.').show();
+                },
+                complete: function () {
+                    $btn.prop('disabled', false).html('<i class="bi bi-magic"></i> Generate');
+                }
+            });
         });
     });
 </script>

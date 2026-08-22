@@ -33,7 +33,7 @@
         <div class="card shadow-sm border-0 stat-card">
             <div class="card-body">
                 <div class="text-muted small">Total Revenue</div>
-                <div class="fs-4 text-success">৳{{ number_format($summary['total_revenue'], 0) }}</div>
+                <div class="fs-4 text-success">₹{{ number_format($summary['total_revenue'], 0) }}</div>
             </div>
         </div>
     </div>
@@ -41,7 +41,7 @@
         <div class="card shadow-sm border-0 stat-card">
             <div class="card-body">
                 <div class="text-muted small">Outstanding Dues</div>
-                <div class="fs-4 text-danger">৳{{ number_format($summary['outstanding_dues'], 0) }}</div>
+                <div class="fs-4 text-danger">₹{{ number_format($summary['outstanding_dues'], 0) }}</div>
             </div>
         </div>
     </div>

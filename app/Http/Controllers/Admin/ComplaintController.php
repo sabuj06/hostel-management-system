@@ -7,12 +7,18 @@ use App\Models\ComplaintCategory;
 use App\Models\Role;
 use App\Models\Student;
 use App\Models\User;
+use App\Services\ComplaintAssistant;
+use App\Services\NotificationService;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 
 class ComplaintController extends Controller
 {
+    public function __construct(private NotificationService $notifications)
+    {
+    }
+
     public function index(Request $request)
     {
         $complaints = Complaint::with('student', 'category', 'assignedTo')
@@ -54,7 +60,7 @@ class ComplaintController extends Controller
         ]);
 
         $student = Student::findOrFail($data['student_id']);
-        $roomId = optional($student->currentAllocation())->room_id;
+        $roomId = optional($student->currentAllocation)->room_id;
 
         Complaint::create([
             ...$data,
@@ -90,6 +96,17 @@ class ComplaintController extends Controller
             'resolved_at' => in_array($data['status'], ['resolved', 'closed']) ? now() : null,
         ]);
 
+        // Let the student know their complaint status changed
+        if (in_array($data['status'], ['resolved', 'closed', 'rejected'])) {
+            $this->notifications->notifyStudent(
+                $complaint->student,
+                "Complaint {$complaint->ticket_no} update",
+                "Your complaint \"{$complaint->title}\" has been marked as " . str_replace('_', ' ', $data['status']) . '.',
+                $complaint,
+                $request->user()->id
+            );
+        }
+
         return response()->json(['success' => true, 'status' => $complaint->status]);
     }
 
@@ -123,6 +140,31 @@ class ComplaintController extends Controller
                 'created_at' => $comment->created_at->format('d M Y, h:i A'),
             ],
         ]);
+    }
+
+    // AJAX: analyze title+description as the user types, suggest category & priority
+    public function suggest(Request $request, ComplaintAssistant $assistant)
+    {
+        $data = $request->validate([
+            'title' => ['nullable', 'string', 'max:255'],
+            'description' => ['nullable', 'string'],
+        ]);
+
+        $result = $assistant->analyze($data['title'] ?? '', $data['description'] ?? '');
+
+        return response()->json($result);
+    }
+
+    // AJAX: turn a rough student note into a Title + polished Description + category/priority
+    public function generateFromNote(Request $request, ComplaintAssistant $assistant)
+    {
+        $data = $request->validate([
+            'note' => ['required', 'string', 'max:1000'],
+        ]);
+
+        $result = $assistant->generateFromNote($data['note']);
+
+        return response()->json($result);
     }
 
     private function generateTicketNo(): string

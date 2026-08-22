@@ -8,12 +8,17 @@ use App\Models\Role;
 use App\Models\Student;
 use App\Models\User;
 use App\Services\ComplaintAssistant;
+use App\Services\NotificationService;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 
 class ComplaintController extends Controller
 {
+    public function __construct(private NotificationService $notifications)
+    {
+    }
+
     public function index(Request $request)
     {
         $complaints = Complaint::with('student', 'category', 'assignedTo')
@@ -55,7 +60,7 @@ class ComplaintController extends Controller
         ]);
 
         $student = Student::findOrFail($data['student_id']);
-        $roomId = optional($student->currentAllocation())->room_id;
+        $roomId = optional($student->currentAllocation)->room_id;
 
         Complaint::create([
             ...$data,
@@ -90,6 +95,17 @@ class ComplaintController extends Controller
             'status' => $data['status'],
             'resolved_at' => in_array($data['status'], ['resolved', 'closed']) ? now() : null,
         ]);
+
+        // Let the student know their complaint status changed
+        if (in_array($data['status'], ['resolved', 'closed', 'rejected'])) {
+            $this->notifications->notifyStudent(
+                $complaint->student,
+                "Complaint {$complaint->ticket_no} update",
+                "Your complaint \"{$complaint->title}\" has been marked as " . str_replace('_', ' ', $data['status']) . '.',
+                $complaint,
+                $request->user()->id
+            );
+        }
 
         return response()->json(['success' => true, 'status' => $complaint->status]);
     }

@@ -103,6 +103,107 @@ class ComplaintAssistant
         }
     }
 
+    /**
+     * Takes a rough, casual note from a student (e.g. "fan e problem hocche 3 din dhore")
+     * and generates a clean Title + polished Description, plus the usual
+     * category/priority suggestion — all in one call.
+     */
+    public function generateFromNote(string $note): array
+    {
+        $note = trim($note);
+
+        if (config('services.gemini.key')) {
+            $aiResult = $this->generateFromNoteWithGemini($note);
+            if ($aiResult !== null) {
+                return $aiResult;
+            }
+        }
+
+        return $this->generateFromNoteWithHeuristics($note);
+    }
+
+    private function generateFromNoteWithGemini(string $note): ?array
+    {
+        try {
+            $categories = ComplaintCategory::pluck('name')->push('Other')->implode(', ');
+            $model = config('services.gemini.model');
+            $apiKey = config('services.gemini.key');
+
+            $prompt = "A hostel student wrote this rough complaint note (possibly casual, mixed language, or with typos): \"{$note}\"\n\n"
+                . "Turn it into a professional hostel maintenance complaint. Categories: {$categories}. Priority options: low, medium, high, urgent.\n\n"
+                . 'Respond ONLY with raw JSON, no markdown, no code fences: {"title": "short clear title, max 10 words", "description": "2-4 sentence polished description in the same language as the note", "category": "...", "priority": "...", "reason": "one short sentence"}';
+
+            $response = \Illuminate\Support\Facades\Http::timeout(10)
+                ->post("https://generativelanguage.googleapis.com/v1beta/models/{$model}:generateContent?key={$apiKey}", [
+                    'contents' => [['parts' => [['text' => $prompt]]]],
+                    'generationConfig' => ['temperature' => 0.4, 'maxOutputTokens' => 300],
+                ]);
+
+            if (! $response->successful()) {
+                return null;
+            }
+
+            $text = $response->json('candidates.0.content.parts.0.text');
+            $text = trim(preg_replace('/^```(?:json)?|```$/m', '', trim($text)));
+            $parsed = json_decode($text, true);
+
+            if (! is_array($parsed) || empty($parsed['title']) || empty($parsed['description'])) {
+                return null;
+            }
+
+            $categoryModel = ComplaintCategory::where('name', $parsed['category'] ?? '')->first();
+
+            return [
+                'suggested_title' => $parsed['title'],
+                'suggested_description' => $parsed['description'],
+                'suggested_category' => $parsed['category'] ?? 'Other',
+                'suggested_category_id' => $categoryModel?->id,
+                'category_confidence' => 90,
+                'suggested_priority' => in_array($parsed['priority'] ?? '', ['low', 'medium', 'high', 'urgent']) ? $parsed['priority'] : 'medium',
+                'priority_reason' => $parsed['reason'] ?? 'Classified by AI.',
+            ];
+        } catch (\Throwable $e) {
+            report($e);
+
+            return null;
+        }
+    }
+
+    // No-API fallback: can't truly "write" text, so it cleans up what the
+    // student typed rather than inventing new wording.
+    private function generateFromNoteWithHeuristics(string $note): array
+    {
+        $classification = $this->analyzeWithKeywords($note, $note);
+
+        // Title: first ~8 words, capitalized, no trailing punctuation
+        $words = preg_split('/\s+/', $note);
+        $titleWords = array_slice($words, 0, 8);
+        $title = implode(' ', $titleWords);
+        $title = rtrim($title, ".,!?;: \t\n\r");
+        $title = mb_strtoupper(mb_substr($title, 0, 1)) . mb_substr($title, 1);
+        if (count($words) > 8) {
+            $title .= '...';
+        }
+        if ($title === '') {
+            $title = 'Maintenance Issue';
+        }
+
+        // Description: light cleanup of the original note (capitalize, ensure it ends with a period)
+        $description = trim($note);
+        if ($description !== '') {
+            $description = mb_strtoupper(mb_substr($description, 0, 1)) . mb_substr($description, 1);
+            if (! in_array(mb_substr($description, -1), ['.', '!', '?'], true)) {
+                $description .= '.';
+            }
+        }
+
+        return [
+            'suggested_title' => $title,
+            'suggested_description' => $description,
+            ...$classification,
+        ];
+    }
+
     private function analyzeWithKeywords(string $title, string $description): array
     {
         $text = mb_strtolower($title . ' ' . $description);

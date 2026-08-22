@@ -1,0 +1,135 @@
+@extends('layouts.app')
+
+@section('title', 'Attendance')
+@section('page-title', 'Daily Attendance / Curfew Check')
+
+@section('content')
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <form method="GET" class="d-flex gap-2 align-items-center">
+        <label class="form-label mb-0 me-1">Date:</label>
+        <input type="date" name="date" class="form-control" value="{{ $date }}" onchange="this.form.submit()" max="{{ now()->format('Y-m-d') }}">
+    </form>
+    <div class="d-flex gap-2">
+        <a href="{{ route('attendance.curfew-settings') }}" class="btn btn-outline-secondary"><i class="bi bi-clock-history"></i> Curfew Settings</a>
+        <button class="btn btn-outline-success" id="mark-all-present"><i class="bi bi-check2-all"></i> Mark All Unmarked Present</button>
+    </div>
+</div>
+
+<div class="card shadow-sm border-0">
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>Student</th>
+                    <th>Room</th>
+                    <th>Check-in Time</th>
+                    <th>Status</th>
+                    <th class="text-end">Mark As</th>
+                </tr>
+            </thead>
+            <tbody id="attendance-tbody">
+                @forelse($students as $student)
+                @php
+                    $today = $student->attendanceOn->first();
+                    $onLeave = in_array($student->id, $onLeaveIds);
+                @endphp
+                <tr data-student-id="{{ $student->id }}">
+                    <td>
+                        {{ $student->name }}
+                        <div class="small text-muted">{{ $student->student_uid }}</div>
+                    </td>
+                    <td>{{ $student->currentAllocation->room->room_number ?? '-' }}</td>
+                    <td style="width:140px;">
+                        <input type="time" class="form-control form-control-sm checkin-time" value="{{ $today->check_in_time ? \Illuminate\Support\Carbon::parse($today->check_in_time)->format('H:i') : '' }}">
+                    </td>
+                    <td class="status-cell">
+                        @if($onLeave)
+                            <span class="badge bg-info text-dark">On Leave</span>
+                        @elseif($today)
+                            <span class="badge bg-{{ $today->status === 'present' ? ($today->is_late ? 'warning' : 'success') : 'danger' }}">
+                                {{ $today->is_late ? 'Late' : ucfirst(str_replace('_', ' ', $today->status)) }}
+                            </span>
+                        @else
+                            <span class="badge bg-secondary">Not Marked</span>
+                        @endif
+                    </td>
+                    <td class="text-end">
+                        <div class="btn-group btn-group-sm" role="group">
+                            <button class="btn btn-outline-success mark-btn" data-status="present">Present</button>
+                            <button class="btn btn-outline-danger mark-btn" data-status="absent">Absent</button>
+                            <button class="btn btn-outline-info mark-btn" data-status="on_leave">Leave</button>
+                        </div>
+                    </td>
+                </tr>
+                @empty
+                <tr><td colspan="5" class="text-center text-muted py-4">No active students found.</td></tr>
+                @endforelse
+            </tbody>
+        </table>
+    </div>
+</div>
+@endsection
+
+@push('scripts')
+<script>
+    $(function () {
+        $.ajaxSetup({ headers: { 'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content') } });
+
+        const date = '{{ $date }}';
+
+        function statusBadge(status, isLate) {
+            if (status === 'present') return isLate
+                ? '<span class="badge bg-warning">Late</span>'
+                : '<span class="badge bg-success">Present</span>';
+            if (status === 'absent') return '<span class="badge bg-danger">Absent</span>';
+            if (status === 'on_leave') return '<span class="badge bg-info text-dark">On Leave</span>';
+            return '<span class="badge bg-secondary">Not Marked</span>';
+        }
+
+        // Mark a single student's attendance via AJAX — instant row update
+        $(document).on('click', '.mark-btn', function () {
+            const $btn = $(this);
+            const $row = $btn.closest('tr');
+            const studentId = $row.data('student-id');
+            const status = $btn.data('status');
+            const checkInTime = $row.find('.checkin-time').val();
+
+            $btn.closest('.btn-group').find('button').prop('disabled', true);
+
+            $.ajax({
+                url: '{{ route('attendance.mark') }}',
+                method: 'POST',
+                data: { student_id: studentId, date: date, status: status, check_in_time: checkInTime || null },
+                success: function (res) {
+                    $row.find('.status-cell').html(statusBadge(res.status, res.is_late));
+                },
+                error: function () {
+                    alert('Failed to save attendance.');
+                },
+                complete: function () {
+                    $btn.closest('.btn-group').find('button').prop('disabled', false);
+                }
+            });
+        });
+
+        // Bulk mark everyone who hasn't been marked yet as present
+        $('#mark-all-present').on('click', function () {
+            const $btn = $(this).prop('disabled', true).text('Marking...');
+
+            $.ajax({
+                url: '{{ route('attendance.mark-all-present') }}',
+                method: 'POST',
+                data: { date: date },
+                success: function (res) {
+                    alert(`Marked ${res.marked_count} unmarked student(s) as present.`);
+                    location.reload();
+                },
+                error: function () {
+                    alert('Failed to bulk mark attendance.');
+                    $btn.prop('disabled', false).html('<i class="bi bi-check2-all"></i> Mark All Unmarked Present');
+                }
+            });
+        });
+    });
+</script>
+@endpush

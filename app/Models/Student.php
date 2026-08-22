@@ -46,10 +46,49 @@ class Student extends Model
         return $this->hasMany(RoomAllocation::class);
     }
 
-    // The bed/room the student currently occupies, if any
-    public function currentAllocation(): ?RoomAllocation
+    public function complaints(): HasMany
     {
-        return $this->allocations()->where('status', 'active')->latest()->first();
+        return $this->hasMany(Complaint::class);
+    }
+
+    public function invoices(): HasMany
+    {
+        return $this->hasMany(Invoice::class);
+    }
+
+    public function messCuts(): HasMany
+    {
+        return $this->hasMany(MessCut::class);
+    }
+
+    public function chatMessages(): HasMany
+    {
+        return $this->hasMany(ChatMessage::class);
+    }
+
+    public function attendances(): HasMany
+    {
+        return $this->hasMany(Attendance::class);
+    }
+
+    // Convenience relation used with eager-load constraints, e.g.
+    // Student::with(['attendanceOn' => fn($q) => $q->where('date', $date)])
+    public function attendanceOn(): HasMany
+    {
+        return $this->hasMany(Attendance::class);
+    }
+
+    public function leaveRequests(): HasMany
+    {
+        return $this->hasMany(LeaveRequest::class);
+    }
+
+    // The bed/room the student currently occupies, if any
+    // A real relation (not a plain method) so it works with ->with(), ->load(),
+    // and property access ($student->currentAllocation) consistently everywhere.
+    public function currentAllocation(): \Illuminate\Database\Eloquent\Relations\HasOne
+    {
+        return $this->hasOne(RoomAllocation::class)->where('status', 'active')->latestOfMany();
     }
 
     public function scopeUnallocated($query)
