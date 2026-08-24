@@ -10,10 +10,17 @@ use App\Models\Invoice;
 use App\Models\Room;
 use App\Models\Student;
 use App\Models\Visitor;
+use App\Services\ForecastingService;
+use App\Services\ReportInsightService;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 class ReportController extends Controller
 {
+    public function __construct(private ForecastingService $forecasting)
+    {
+    }
+
     public function index()
     {
         $summary = $this->buildSummary();
@@ -22,11 +29,24 @@ class ReportController extends Controller
         $complaintsByStatus = $this->buildComplaintsByStatus();
         $complaintsByCategory = $this->buildComplaintsByCategory();
         $roomTypeBreakdown = $this->buildRoomTypeBreakdown();
+        $trendInsights = $this->forecasting->trendInsights();
+        $visitorPeakHours = $this->forecasting->visitorPeakHours();
+        $messForecast = $this->forecasting->messDemandForecast();
 
         return view('reports.index', compact(
             'summary', 'occupancy', 'revenueTrend',
-            'complaintsByStatus', 'complaintsByCategory', 'roomTypeBreakdown'
+            'complaintsByStatus', 'complaintsByCategory', 'roomTypeBreakdown',
+            'trendInsights', 'visitorPeakHours', 'messForecast'
         ));
+    }
+
+    // AJAX: AI-written natural-language summary of the current dashboard state
+    public function aiSummary(Request $request, ReportInsightService $insightService)
+    {
+        $summary = $this->buildSummary();
+        $trendInsights = $this->forecasting->trendInsights();
+
+        return response()->json(['summary' => $insightService->summarize($summary, $trendInsights)]);
     }
 
     private function buildSummary(): array

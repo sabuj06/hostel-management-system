@@ -6,13 +6,16 @@ use App\Http\Controllers\Controller;
 use App\Models\Hostel;
 use App\Models\Notice;
 use App\Models\Student;
+use App\Services\ContentAssistantService;
 use App\Services\NotificationService;
 use Illuminate\Http\Request;
 
 class NoticeController extends Controller
 {
-    public function __construct(private NotificationService $notifications)
-    {
+    public function __construct(
+        private NotificationService $notifications,
+        private ContentAssistantService $contentAssistant,
+    ) {
     }
 
     // Visible to everyone logged in — the notice board
@@ -103,6 +106,30 @@ class NoticeController extends Controller
         $notice->reads()->firstOrCreate(['user_id' => $request->user()->id]);
 
         return response()->json(['success' => true]);
+    }
+
+    // AJAX: turn a 1-2 line admin draft into a full polished notice
+    public function generateDraft(Request $request)
+    {
+        $data = $request->validate(['draft' => ['required', 'string', 'max:500']]);
+
+        return response()->json($this->contentAssistant->generateNotice($data['draft']));
+    }
+
+    // AJAX: translate a notice's title+body into the requested language
+    public function translate(Request $request, Notice $notice)
+    {
+        $data = $request->validate(['language' => ['required', 'string', 'max:50']]);
+
+        $title = $this->contentAssistant->translate($notice->title, $data['language']);
+        $body = $this->contentAssistant->translate($notice->body, $data['language']);
+
+        return response()->json([
+            'title' => $title['text'],
+            'body' => $body['text'],
+            'translated' => $title['translated'] && $body['translated'],
+            'note' => $title['note'] ?? null,
+        ]);
     }
 
     private function validated(Request $request): array

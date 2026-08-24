@@ -25,7 +25,7 @@
                     <option value="">Select Fee Structure</option>
                     @foreach($feeStructures as $fee)
                         <option value="{{ $fee->id }}" data-amount="{{ $fee->amount }}">
-                            {{ $fee->name }} (৳{{ number_format($fee->amount, 2) }} / {{ str_replace('_', ' ', $fee->frequency) }})
+                            {{ $fee->name }} (₹{{ number_format($fee->amount, 2) }} / {{ str_replace('_', ' ', $fee->frequency) }})
                         </option>
                     @endforeach
                 </select>

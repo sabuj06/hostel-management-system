@@ -45,7 +45,7 @@
                     <td class="text-capitalize">{{ $room->room_type }}</td>
                     <td>{{ $room->capacity }}</td>
                     <td>{{ $room->beds_count }}</td>
-                    <td>৳{{ number_format($room->monthly_rent, 2) }}</td>
+                    <td>₹{{ number_format($room->monthly_rent, 2) }}</td>
                     <td>
                         <span class="badge bg-{{ $room->status === 'active' ? 'success' : ($room->status === 'maintenance' ? 'warning' : 'danger') }}">
                             {{ ucfirst($room->status) }}

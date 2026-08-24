@@ -1,288 +1,158 @@
 @extends('layouts.app')
 
-@section('title', 'Notices')
+@section('title', 'Notice Board')
 @section('page-title', 'Notice Board')
 
 @section('content')
+@if(auth()->user()->hasRole('admin') || auth()->user()->hasRole('warden'))
+<div class="d-flex justify-content-end mb-3">
+    <a href="{{ route('notices.manage') }}" class="btn btn-outline-secondary me-2"><i class="bi bi-gear"></i> Manage Notices</a>
+    <a href="{{ route('notices.create') }}" class="btn btn-primary"><i class="bi bi-plus-lg"></i> Post Notice</a>
+</div>
+@endif
 
-<div class="d-flex justify-content-between align-items-center mb-4">
+<div class="d-flex flex-column gap-3" id="notice-list">
+    @forelse($notices as $notice)
+    @php
+        $isRead = in_array($notice->id, $readIds);
+        $priorityColor = ['normal' => 'border-secondary', 'important' => 'border-warning', 'urgent' => 'border-danger'][$notice->priority];
+    @endphp
+    <div class="card shadow-sm border-start border-4 {{ $priorityColor }} notice-card {{ $isRead ? '' : 'bg-light' }}" data-notice-id="{{ $notice->id }}">
+        <div class="card-body">
+            <div class="d-flex justify-content-between align-items-start">
+                <div>
+                    <h6 class="mb-1 notice-title">
+                        {{ $notice->title }}
+                        @if($notice->priority !== 'normal')
+                            <span class="badge bg-{{ $notice->priority === 'urgent' ? 'danger' : 'warning' }} text-capitalize ms-1">{{ $notice->priority }}</span>
+                        @endif
+                        @unless($isRead)
+                            <span class="badge bg-primary read-indicator">New</span>
+                        @endunless
+                    </h6>
+                    <div class="text-muted small mb-2">
+                        {{ $notice->postedBy->name ?? 'Admin' }} &middot; {{ optional($notice->publish_date)->format('d M Y') }}
+                        @if($notice->audience !== 'all')
+                            &middot; <span class="text-capitalize">{{ $notice->audience }}</span> only
+                        @endif
+                    </div>
+                    <p class="mb-0 notice-body">{{ $notice->body }}</p>
 
-    <div>
-        <h4 class="mb-1">Notice Board</h4>
-        <p class="text-muted mb-0">
-            View all published hostel notices and announcements.
-        </p>
-    </div>
-
-    @if(auth()->user()?->hasRole('admin') || auth()->user()?->hasRole('warden'))
-        <div class="d-flex gap-2">
-
-            <a href="{{ route('notices.manage') }}"
-               class="btn btn-outline-secondary">
-                <i class="bi bi-gear me-1"></i>
-                Manage Notices
-            </a>
-
-            <a href="{{ route('notices.create') }}"
-               class="btn btn-primary">
-                <i class="bi bi-plus-lg me-1"></i>
-                Create Notice
-            </a>
-
+                    <div class="d-flex align-items-center gap-2 mt-2">
+                        <select class="form-select form-select-sm translate-lang" style="width:auto;">
+                            <option value="">Translate to...</option>
+                            <option value="Bengali">বাংলা (Bengali)</option>
+                            <option value="Hindi">हिन्दी (Hindi)</option>
+                            <option value="English">English</option>
+                            <option value="Arabic">العربية (Arabic)</option>
+                        </select>
+                        <button class="btn btn-sm btn-outline-secondary translate-btn" style="display:none;">
+                            <i class="bi bi-translate"></i> Translate
+                        </button>
+                        <button class="btn btn-sm btn-link show-original-btn" style="display:none;">Show original</button>
+                    </div>
+                    <div class="small text-muted mt-1 translate-note" style="display:none;"></div>
+                </div>
+            </div>
         </div>
-    @endif
-
+    </div>
+    @empty
+    <div class="text-center text-muted py-5">No notices posted yet.</div>
+    @endforelse
 </div>
 
-
-{{-- Success Message --}}
-@if(session('status'))
-    <div class="alert alert-success alert-dismissible fade show">
-        <i class="bi bi-check-circle me-1"></i>
-        {{ session('status') }}
-
-        <button type="button"
-                class="btn-close"
-                data-bs-dismiss="alert"></button>
-    </div>
-@endif
-
-
-{{-- Notices --}}
-@if($notices->count())
-
-    <div class="row g-4">
-
-        @foreach($notices as $notice)
-
-            <div class="col-md-6 col-xl-4">
-
-                <div class="card h-100 shadow-sm border-0">
-
-                    <div class="card-body">
-
-                        {{-- Priority --}}
-                        <div class="d-flex justify-content-between align-items-start mb-3">
-
-                            <div>
-                                @if($notice->priority === 'urgent')
-                                    <span class="badge bg-danger">
-                                        <i class="bi bi-exclamation-triangle me-1"></i>
-                                        Urgent
-                                    </span>
-
-                                @elseif($notice->priority === 'important')
-                                    <span class="badge bg-warning text-dark">
-                                        <i class="bi bi-exclamation-circle me-1"></i>
-                                        Important
-                                    </span>
-
-                                @else
-                                    <span class="badge bg-secondary">
-                                        Normal
-                                    </span>
-                                @endif
-                            </div>
-
-                            {{-- Read Status --}}
-                            @if(in_array($notice->id, $readIds ?? []))
-                                <span class="badge bg-success">
-                                    <i class="bi bi-check2 me-1"></i>
-                                    Read
-                                </span>
-                            @else
-                                <span class="badge bg-light text-dark border">
-                                    Unread
-                                </span>
-                            @endif
-
-                        </div>
-
-
-                        {{-- Title --}}
-                        <h5 class="card-title fw-semibold">
-                            {{ $notice->title }}
-                        </h5>
-
-
-                        {{-- Body --}}
-                        <p class="card-text text-muted">
-                            {{ \Illuminate\Support\Str::limit(strip_tags($notice->body), 180) }}
-                        </p>
-
-
-                        <hr>
-
-
-                        {{-- Audience --}}
-                        <div class="small text-muted mb-2">
-
-                            <i class="bi bi-people me-1"></i>
-
-                            @if($notice->audience === 'all')
-                                Everyone
-
-                            @elseif($notice->audience === 'students')
-                                Students
-
-                            @elseif($notice->audience === 'staff')
-                                Staff
-
-                            @elseif($notice->audience === 'hostel')
-                                {{ $notice->hostel?->name ?? 'Specific Hostel' }}
-
-                            @endif
-
-                        </div>
-
-
-                        {{-- Publish Date --}}
-                        <div class="small text-muted mb-2">
-                            <i class="bi bi-calendar-event me-1"></i>
-
-                            Published:
-                            {{ $notice->publish_date?->format('d M Y') }}
-                        </div>
-
-
-                        {{-- Expiry --}}
-                        @if($notice->expiry_date)
-
-                            <div class="small text-muted mb-2">
-                                <i class="bi bi-calendar-x me-1"></i>
-
-                                Expires:
-                                {{ $notice->expiry_date->format('d M Y') }}
-                            </div>
-
-                        @endif
-
-
-                        {{-- Posted By --}}
-                        @if($notice->postedBy)
-
-                            <div class="small text-muted">
-                                <i class="bi bi-person me-1"></i>
-
-                                Posted by:
-                                {{ $notice->postedBy->name }}
-                            </div>
-
-                        @endif
-
-                    </div>
-
-
-                    {{-- Card Footer --}}
-                    <div class="card-footer bg-white border-0 pt-0 pb-3 px-3">
-
-                        <button
-                            type="button"
-                            class="btn btn-sm btn-outline-primary w-100"
-                            onclick="markNoticeRead({{ $notice->id }}, this)"
-                        >
-                            <i class="bi bi-eye me-1"></i>
-                            View Notice
-                        </button>
-
-                    </div>
-
-                </div>
-
-            </div>
-
-        @endforeach
-
-    </div>
-
-
-    {{-- Pagination --}}
-    <div class="mt-4">
-        {{ $notices->links() }}
-    </div>
-
-@else
-
-    <div class="card shadow-sm border-0">
-
-        <div class="card-body text-center py-5">
-
-            <i class="bi bi-megaphone fs-1 text-muted"></i>
-
-            <h5 class="mt-3">
-                No Notices Available
-            </h5>
-
-            <p class="text-muted">
-                There are currently no published notices.
-            </p>
-
-            @if(auth()->user()?->hasRole('admin') || auth()->user()?->hasRole('warden'))
-
-                <a href="{{ route('notices.create') }}"
-                   class="btn btn-primary">
-
-                    <i class="bi bi-plus-lg me-1"></i>
-                    Create First Notice
-
-                </a>
-
-            @endif
-
-        </div>
-
-    </div>
-
-@endif
-
+<div class="mt-3">{{ $notices->links() }}</div>
 @endsection
 
-
 @push('scripts')
-
 <script>
+    $(function () {
+        $.ajaxSetup({
+            headers: { 'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content') }
+        });
 
-function markNoticeRead(noticeId, button) {
+        // Mark a notice read the moment it scrolls into view (IntersectionObserver + jQuery AJAX)
+        const observer = new IntersectionObserver(function (entries) {
+            entries.forEach(function (entry) {
+                if (!entry.isIntersecting) return;
 
-    fetch(`/notices/${noticeId}/read`, {
+                const $card = $(entry.target);
+                if ($card.data('read-sent')) return;
+                $card.data('read-sent', true);
 
-        method: 'POST',
+                const noticeId = $card.data('notice-id');
 
-        headers: {
-            'X-CSRF-TOKEN': document
-                .querySelector('meta[name="csrf-token"]')
-                .getAttribute('content'),
+                $.ajax({
+                    url: `/notices/${noticeId}/read`,
+                    method: 'POST',
+                    success: function () {
+                        $card.removeClass('bg-light');
+                        $card.find('.read-indicator').fadeOut(300, function () { $(this).remove(); });
+                    }
+                });
 
-            'Accept': 'application/json',
-            'Content-Type': 'application/json'
-        }
+                observer.unobserve(entry.target);
+            });
+        }, { threshold: 0.5 });
 
-    })
-    .then(response => response.json())
+        document.querySelectorAll('.notice-card').forEach(el => observer.observe(el));
 
-    .then(data => {
+        // Translate — show the button once a language is picked, cache
+        // originals so "Show original" can revert without another call
+        $(document).on('change', '.translate-lang', function () {
+            const $btn = $(this).closest('.notice-card').find('.translate-btn');
+            $btn.toggle($(this).val() !== '');
+        });
 
-        if (data.success) {
+        $(document).on('click', '.translate-btn', function () {
+            const $card = $(this).closest('.notice-card');
+            const noticeId = $card.data('notice-id');
+            const language = $card.find('.translate-lang').val();
+            const $titleEl = $card.find('.notice-title');
+            const $bodyEl = $card.find('.notice-body');
+            const $btn = $(this);
 
-            button.innerHTML =
-                '<i class="bi bi-check-circle me-1"></i> Read';
+            if (!$titleEl.data('original')) {
+                $titleEl.data('original', $titleEl.contents().first().text().trim());
+                $bodyEl.data('original', $bodyEl.text());
+            }
 
-            button.classList.remove('btn-outline-primary');
+            $btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
 
-            button.classList.add('btn-success');
+            $.ajax({
+                url: `/notices/${noticeId}/translate`,
+                method: 'POST',
+                data: { language: language },
+                success: function (res) {
+                    $titleEl.contents().first().replaceWith(res.title + ' ');
+                    $bodyEl.text(res.body);
+                    $card.find('.show-original-btn').show();
 
-            button.disabled = true;
+                    if (!res.translated) {
+                        $card.find('.translate-note').text(res.note).show();
+                    } else {
+                        $card.find('.translate-note').hide();
+                    }
+                },
+                error: function () {
+                    alert('Translation failed. Please try again.');
+                },
+                complete: function () {
+                    $btn.prop('disabled', false).html('<i class="bi bi-translate"></i> Translate');
+                }
+            });
+        });
 
-        }
+        $(document).on('click', '.show-original-btn', function () {
+            const $card = $(this).closest('.notice-card');
+            const $titleEl = $card.find('.notice-title');
+            const $bodyEl = $card.find('.notice-body');
 
-    })
-
-    .catch(error => {
-        console.error('Notice read error:', error);
+            $titleEl.contents().first().replaceWith($titleEl.data('original') + ' ');
+            $bodyEl.text($bodyEl.data('original'));
+            $card.find('.show-original-btn').hide();
+            $card.find('.translate-note').hide();
+        });
     });
-
-}
-
 </script>
-
 @endpush

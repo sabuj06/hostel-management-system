@@ -28,7 +28,7 @@
                     <td>{{ $fee->name }}</td>
                     <td>{{ $fee->hostel->name ?? 'All Hostels' }}</td>
                     <td class="text-capitalize">{{ $fee->room_type }}</td>
-                    <td>৳{{ number_format($fee->amount, 2) }}</td>
+                    <td>₹{{ number_format($fee->amount, 2) }}</td>
                     <td class="text-capitalize">{{ str_replace('_', ' ', $fee->frequency) }}</td>
                     <td><span class="badge bg-{{ $fee->status === 'active' ? 'success' : 'secondary' }}">{{ ucfirst($fee->status) }}</span></td>
                     <td class="text-end">

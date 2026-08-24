@@ -23,9 +23,9 @@
                 <tr>
                     <td>{{ $inv->invoice_no }}</td>
                     <td>{{ $inv->period ?? '-' }}</td>
-                    <td>৳{{ number_format($inv->amount, 2) }}</td>
-                    <td>৳{{ number_format($inv->paid_amount, 2) }}</td>
-                    <td class="fw-semibold">৳{{ number_format($inv->balance(), 2) }}</td>
+                    <td>₹{{ number_format($inv->amount, 2) }}</td>
+                    <td>₹{{ number_format($inv->paid_amount, 2) }}</td>
+                    <td class="fw-semibold">₹{{ number_format($inv->balance(), 2) }}</td>
                     <td>{{ $inv->due_date->format('d M Y') }}</td>
                     <td>
                         @php

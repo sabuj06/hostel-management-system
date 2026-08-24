@@ -14,6 +14,8 @@ use App\Http\Controllers\Admin\NotificationLogController;
 use App\Http\Controllers\Admin\PolicyDocumentController;
 use App\Http\Controllers\Admin\PaymentController;
 use App\Http\Controllers\Admin\ReportController;
+use App\Http\Controllers\Admin\SmartSearchController;
+use App\Http\Controllers\Admin\StudentDocumentController as AdminStudentDocumentController;
 use App\Http\Controllers\Admin\RoleController;
 use App\Http\Controllers\Admin\RoomAllocationController;
 use App\Http\Controllers\Admin\RoomController;
@@ -27,10 +29,13 @@ use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Admin\VisitorController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\PaymentWebhookController;
+use App\Http\Controllers\ReceiptController;
 use App\Http\Controllers\Student\ChatbotController;
+use App\Http\Controllers\Student\PaymentGatewayController;
 use App\Http\Controllers\Student\PolicyQaController;
+use App\Http\Controllers\Student\StudentDocumentController;
 use App\Http\Controllers\Student\StudentPortalController;
-use App\Http\Controllers\Admin\AssetController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', fn () => redirect()->route('login'));
@@ -120,7 +125,11 @@ Route::middleware('auth')->group(function () {
         Route::get('/notices/{notice}/edit', [NoticeController::class, 'edit'])->name('notices.edit');
         Route::put('/notices/{notice}', [NoticeController::class, 'update'])->name('notices.update');
         Route::delete('/notices/{notice}', [NoticeController::class, 'destroy'])->name('notices.destroy');
+        Route::post('/notices-ai-generate', [NoticeController::class, 'generateDraft'])->name('notices.ai-generate');
     });
+
+    // Translation — available to everyone viewing the notice board (students included)
+    Route::post('/notices/{notice}/translate', [NoticeController::class, 'translate'])->name('notices.translate');
 
     // Phase 7 — Visitor Management (admin + warden + staff, gate duty)
     Route::middleware('role:admin,warden,staff')->group(function () {
@@ -134,6 +143,10 @@ Route::middleware('auth')->group(function () {
     // Phase 9 — Reports & Analytics (admin + warden only)
     Route::middleware('role:admin,warden')->group(function () {
         Route::get('/reports', [ReportController::class, 'index'])->name('reports.index');
+        Route::post('/reports/ai-summary', [ReportController::class, 'aiSummary'])->name('reports.ai-summary');
+
+        Route::get('/smart-search', [SmartSearchController::class, 'index'])->name('smart-search.index');
+        Route::post('/smart-search', [SmartSearchController::class, 'search'])->name('smart-search.search');
     });
 
     // Phase 10 — User & Role Management (admin only)
@@ -148,6 +161,14 @@ Route::middleware('auth')->group(function () {
         Route::put('/roles/{role}', [RoleController::class, 'update'])->name('roles.update');
         Route::delete('/roles/{role}', [RoleController::class, 'destroy'])->name('roles.destroy');
         Route::post('/roles/{role}/permissions/toggle', [RoleController::class, 'togglePermission'])->name('roles.permissions.toggle');
+    });
+
+    // Document / ID Verification (admin + warden)
+    Route::middleware('role:admin,warden')->group(function () {
+        Route::get('/student-documents', [AdminStudentDocumentController::class, 'index'])->name('student-documents.index');
+        Route::get('/student-documents/{studentDocument}/download', [AdminStudentDocumentController::class, 'download'])->name('student-documents.download');
+        Route::post('/student-documents/{studentDocument}/review', [AdminStudentDocumentController::class, 'review'])->name('student-documents.review');
+        Route::delete('/student-documents/{studentDocument}', [AdminStudentDocumentController::class, 'destroy'])->name('student-documents.destroy');
     });
 
     // Phase 11 — Student Self-Service Portal (student role only)
@@ -176,8 +197,25 @@ Route::middleware('auth')->group(function () {
 
         Route::get('/policy-qa', [PolicyQaController::class, 'index'])->name('policy-qa');
         Route::post('/policy-qa/ask', [PolicyQaController::class, 'ask'])->name('policy-qa.ask');
+
+        Route::get('/invoices/{invoice}/pay', [PaymentGatewayController::class, 'checkout'])->name('invoices.pay');
+        Route::post('/payments/verify', [PaymentGatewayController::class, 'verify'])->name('payments.verify');
+
+        Route::get('/documents', [StudentDocumentController::class, 'index'])->name('documents.index');
+        Route::post('/documents', [StudentDocumentController::class, 'store'])->name('documents.store');
+        Route::delete('/documents/{document}', [StudentDocumentController::class, 'destroy'])->name('documents.destroy');
     });
 });
+
+// Receipts — accessible to any authenticated role, self-scoped inside the controller
+Route::middleware('auth')->group(function () {
+    Route::get('/receipts/{payment}', [ReceiptController::class, 'show'])->name('receipts.show');
+    Route::get('/receipts/{payment}/download', [ReceiptController::class, 'download'])->name('receipts.download');
+});
+
+// Public webhook — no auth, no CSRF (exempted in bootstrap/app.php).
+// Razorpay calls this directly from their servers, not from a browser.
+Route::post('/webhooks/razorpay', [PaymentWebhookController::class, 'razorpay'])->name('webhooks.razorpay');
 
 // Phase 12 — Attendance / Curfew Tracking + Leave Requests (admin + warden + staff)
 Route::middleware(['auth', 'role:admin,warden,staff'])->group(function () {
@@ -216,46 +254,4 @@ Route::middleware(['auth', 'role:admin'])->group(function () {
     Route::get('/policy-documents/create', [PolicyDocumentController::class, 'create'])->name('policy-documents.create');
     Route::post('/policy-documents', [PolicyDocumentController::class, 'store'])->name('policy-documents.store');
     Route::delete('/policy-documents/{policyDocument}', [PolicyDocumentController::class, 'destroy'])->name('policy-documents.destroy');
-
-
-    
-
-    });
-
-    // Phase 15 — Inventory & Asset Management (admin + warden only)
-Route::middleware(['auth', 'role:admin,warden'])->group(function () {
-
-    // Assets
-    Route::get('/assets', [AssetController::class, 'index'])
-        ->name('assets.index');
-
-    Route::get('/assets/create', [AssetController::class, 'create'])
-        ->name('assets.create');
-
-    Route::post('/assets', [AssetController::class, 'store'])
-        ->name('assets.store');
-
-    Route::get('/assets/{asset}/assign', [AssetController::class, 'assignForm'])
-        ->name('assets.assign-form');
-
-    Route::post('/assets/{asset}/assign', [AssetController::class, 'assignStore'])
-        ->name('assets.assign-store');
-
-    Route::post('/assets/{asset}/write-off', [AssetController::class, 'writeOff'])
-        ->name('assets.write-off');
-
-
-    // Damage Reports
-    Route::get('/asset-damage-reports', [AssetController::class, 'damageReports'])
-        ->name('asset-damage-reports.index');
-
-    Route::get('/asset-damage-reports/create', [AssetController::class, 'createDamageReport'])
-        ->name('asset-damage-reports.create');
-
-    Route::post('/asset-damage-reports', [AssetController::class, 'storeDamageReport'])
-        ->name('asset-damage-reports.store');
-
-    Route::post('/asset-damage-reports/{assetDamageReport}/status', [AssetController::class, 'updateDamageStatus'])
-        ->name('asset-damage-reports.update-status');
-
 });

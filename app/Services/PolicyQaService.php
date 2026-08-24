@@ -59,7 +59,8 @@ class PolicyQaService
 
             $prompt = "You are a hostel policy assistant. Answer the student's question using ONLY the policy excerpts below — never guess or add rules that aren't stated. "
                 . "If the excerpts don't fully answer the question, say what you found and suggest contacting the hostel office for the rest. "
-                . "Mention which document(s) your answer is based on. Reply in the same language as the question. Keep it under 5 sentences.\n\n"
+                . "Mention which document(s) your answer is based on. Reply in the same language as the question. Keep it under 5 sentences. "
+                . "Reply in PLAIN TEXT only — no markdown, no asterisks, no bold/italic markers, no bullet points, no links.\n\n"
                 . "POLICY EXCERPTS:\n{$context}\n\nQUESTION: {$question}";
 
             $response = Http::timeout(15)
@@ -73,6 +74,7 @@ class PolicyQaService
             }
 
             $text = trim($response->json('candidates.0.content.parts.0.text') ?? '');
+            $text = $this->stripMarkdown($text);
 
             return $text !== '' ? $text : null;
         } catch (\Throwable $e) {
@@ -115,5 +117,16 @@ class PolicyQaService
         }
 
         return $chunks;
+    }
+
+    private function stripMarkdown(string $text): string
+    {
+        $text = preg_replace('/\*\*(.*?)\*\*/', '$1', $text);
+        $text = preg_replace('/\*(.*?)\*/', '$1', $text);
+        $text = preg_replace('/\[(.*?)\]\(.*?\)/', '$1', $text);
+        $text = preg_replace('/^#{1,6}\s*/m', '', $text);
+        $text = preg_replace('/^[-*]\s+/m', '', $text);
+
+        return trim($text);
     }
 }

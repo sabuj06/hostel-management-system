@@ -88,7 +88,7 @@ class MessBillController extends Controller
                     'amount' => $amount,
                     'due_date' => (clone $end)->addDays(7),
                     'status' => 'unpaid',
-                    'remarks' => "{$attendedDays} attended day(s) x ৳{$rate}/day (mess cut: {$cutDays} day(s) deducted).",
+                    'remarks' => "{$attendedDays} attended day(s) x ₹{$rate}/day (mess cut: {$cutDays} day(s) deducted).",
                 ]);
 
                 $created++;

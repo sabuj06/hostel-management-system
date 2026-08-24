@@ -76,20 +76,21 @@ class HostelChatbotService
 
             $contextText = "Student name: {$context['student_name']}\n"
                 . 'Room: ' . ($context['room'] ? "Room {$context['room']}, Bed {$context['bed']}" : 'Not allocated yet') . "\n"
-                . "Total due: ৳{$context['total_due']} across {$context['unpaid_invoice_count']} invoice(s)\n"
+                . "Total due: ₹{$context['total_due']} across {$context['unpaid_invoice_count']} invoice(s)\n"
                 . "Today's breakfast: {$context['today_breakfast']}\n"
                 . "Today's lunch: {$context['today_lunch']}\n"
                 . "Today's dinner: {$context['today_dinner']}\n"
                 . "Recent notices:\n- " . implode("\n- ", $context['notices']);
 
             $prompt = "You are a helpful hostel assistant chatbot for a student. Answer ONLY using the data below — never invent room numbers, amounts, or menu items. "
-                . "If the question can't be answered from this data, politely tell the student to contact the hostel office. Keep answers short (2-3 sentences), and reply in the same language the student used.\n\n"
+                . "If the question can't be answered from this data, politely tell the student to contact the hostel office. Keep answers short (2-3 sentences), and reply in the same language the student used. "
+                . "Reply in PLAIN TEXT only — no markdown, no asterisks, no bold/italic markers, no bullet points, no links.\n\n"
                 . "STUDENT DATA:\n{$contextText}\n\nSTUDENT QUESTION: {$question}";
 
             $response = Http::timeout(10)
                 ->post("https://generativelanguage.googleapis.com/v1beta/models/{$model}:generateContent?key={$apiKey}", [
                     'contents' => [['parts' => [['text' => $prompt]]]],
-                    'generationConfig' => ['temperature' => 0.3, 'maxOutputTokens' => 1000],
+                    'generationConfig' => ['temperature' => 0.3, 'maxOutputTokens' => 250],
                 ]);
 
             if (! $response->successful()) {
@@ -97,6 +98,7 @@ class HostelChatbotService
             }
 
             $text = trim($response->json('candidates.0.content.parts.0.text') ?? '');
+            $text = $this->stripMarkdown($text);
 
             return $text !== '' ? $text : null;
         } catch (\Throwable $e) {
@@ -120,7 +122,7 @@ class HostelChatbotService
         // Fees / dues
         if (str_contains($q, 'fee') || str_contains($q, 'due') || str_contains($q, 'পেমেন্ট') || str_contains($q, 'বকেয়া') || str_contains($q, 'টাকা') || str_contains($q, 'invoice')) {
             return $context['total_due'] > 0
-                ? "You have ৳{$context['total_due']} due across {$context['unpaid_invoice_count']} invoice(s). Check 'My Invoices' for details."
+                ? "You have ₹{$context['total_due']} due across {$context['unpaid_invoice_count']} invoice(s). Check 'My Invoices' for details."
                 : "You have no outstanding dues right now. 🎉";
         }
 
@@ -139,5 +141,16 @@ class HostelChatbotService
         return "I can help with: room info, fees/dues, today's mess menu, and notices. "
             . "Try asking something like \"What's my room?\", \"Do I have any dues?\", or \"What's for lunch today?\". "
             . 'For anything else, please contact the hostel office.';
+    }
+
+    private function stripMarkdown(string $text): string
+    {
+        $text = preg_replace('/\*\*(.*?)\*\*/', '$1', $text);
+        $text = preg_replace('/\*(.*?)\*/', '$1', $text);
+        $text = preg_replace('/\[(.*?)\]\(.*?\)/', '$1', $text);
+        $text = preg_replace('/^#{1,6}\s*/m', '', $text);
+        $text = preg_replace('/^[-*]\s+/m', '', $text);
+
+        return trim($text);
     }
 }

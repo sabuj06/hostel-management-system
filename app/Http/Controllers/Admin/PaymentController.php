@@ -21,7 +21,7 @@ class PaymentController extends Controller
             'transaction_ref' => ['nullable', 'string', 'max:255'],
             'remarks' => ['nullable', 'string'],
         ], [
-            'amount.max' => 'Payment amount cannot exceed the remaining balance of ৳' . number_format($invoice->balance(), 2),
+            'amount.max' => 'Payment amount cannot exceed the remaining balance of ₹' . number_format($invoice->balance(), 2),
         ]);
 
         $payment = DB::transaction(function () use ($data, $invoice, $request) {

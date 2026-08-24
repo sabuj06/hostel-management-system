@@ -53,7 +53,7 @@
                         @endphp
                         <span class="badge bg-{{ $badge }} text-capitalize">{{ str_replace('_', ' ', $report->status) }}</span>
                     </td>
-                    <td>{{ $report->repair_cost ? '৳' . number_format($report->repair_cost, 2) : '-' }}</td>
+                    <td>{{ $report->repair_cost ? '₹' . number_format($report->repair_cost, 2) : '-' }}</td>
                     <td class="text-end">
                         <form method="POST" action="{{ route('asset-damage-reports.update-status', $report) }}" class="d-flex gap-1 justify-content-end">
                             @csrf

@@ -14,7 +14,7 @@
             @csrf
             @forelse($hostels as $hostel)
             <div class="mb-3">
-                <label class="form-label">{{ $hostel->name }} — Rate per Day (৳)</label>
+                <label class="form-label">{{ $hostel->name }} — Rate per Day (₹)</label>
                 <input type="number" step="0.01" name="rates[{{ $hostel->id }}]" class="form-control" value="{{ $rates[$hostel->id] ?? '' }}" required>
             </div>
             @empty

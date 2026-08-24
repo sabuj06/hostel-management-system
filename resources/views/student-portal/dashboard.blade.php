@@ -25,7 +25,7 @@
         <div class="card shadow-sm border-0">
             <div class="card-body">
                 <div class="text-muted small">Total Due</div>
-                <div class="fs-3 fw-bold">৳{{ number_format($stats['total_due'], 2) }}</div>
+                <div class="fs-3 fw-bold">₹{{ number_format($stats['total_due'], 2) }}</div>
             </div>
         </div>
     </div>

@@ -63,6 +63,55 @@
     </div>
 </div>
 
+<!-- AI Report Summary -->
+<div class="card shadow-sm border-0 mb-3 border-start border-4 border-primary">
+    <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center">
+            <h6 class="mb-0"><i class="bi bi-stars text-primary"></i> AI Summary</h6>
+            <button class="btn btn-sm btn-outline-primary" id="generate-summary-btn">Generate</button>
+        </div>
+        <p id="ai-summary-text" class="mb-0 mt-2 text-muted" style="display:none;"></p>
+    </div>
+</div>
+
+<!-- Dashboard Insights (deterministic, always available) -->
+<div class="row g-3 mb-3">
+    @foreach($trendInsights as $insight)
+    <div class="col-md-4">
+        <div class="alert alert-{{ $insight['tone'] === 'good' ? 'success' : ($insight['tone'] === 'bad' ? 'warning' : 'secondary') }} mb-0">
+            <i class="bi bi-{{ $insight['direction'] === 'up' ? 'arrow-up-circle' : ($insight['direction'] === 'down' ? 'arrow-down-circle' : 'dash-circle') }}"></i>
+            {{ $insight['message'] }}
+        </div>
+    </div>
+    @endforeach
+</div>
+
+<!-- Forecasting widgets -->
+<div class="row g-3 mb-3">
+    <div class="col-md-6">
+        <div class="card shadow-sm border-0">
+            <div class="card-body">
+                <h6 class="mb-2"><i class="bi bi-graph-up"></i> Visitor Traffic Insight</h6>
+                <p class="mb-1 small">Peak hour (last 30 days): <strong>{{ $visitorPeakHours['peak_hour_label'] }}</strong></p>
+                <p class="mb-1 small">Daily average: <strong>{{ $visitorPeakHours['daily_average'] }}</strong> visitors/day &middot; Today: <strong>{{ $visitorPeakHours['today_count'] }}</strong></p>
+                @if($visitorPeakHours['anomaly'])
+                <div class="alert alert-warning small mb-0 mt-2"><i class="bi bi-exclamation-triangle"></i> {{ $visitorPeakHours['anomaly'] }}</div>
+                @endif
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card shadow-sm border-0">
+            <div class="card-body">
+                <h6 class="mb-2"><i class="bi bi-cup-hot"></i> Mess Demand Forecast</h6>
+                <p class="mb-1 small">Expected diners for {{ $messForecast['date'] }}:</p>
+                <div class="fs-3 fw-bold text-primary">{{ $messForecast['expected_diners'] }}</div>
+                <p class="text-muted small mb-0">{{ $messForecast['active_students'] }} allocated students minus {{ $messForecast['mess_cuts'] }} on mess cut.</p>
+            </div>
+        </div>
+    </div>
+</div>
+
 <div class="row g-3">
     <div class="col-md-6">
         <div class="card shadow-sm border-0 chart-card">
@@ -115,6 +164,27 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <script>
     $(function () {
+        $.ajaxSetup({ headers: { 'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content') } });
+
+        // AI Report Summary — this was missing before, causing the button to do nothing
+        $('#generate-summary-btn').on('click', function () {
+            const $btn = $(this).prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Generating...');
+
+            $.ajax({
+                url: '{{ route('reports.ai-summary') }}',
+                method: 'POST',
+                success: function (res) {
+                    $('#ai-summary-text').text(res.summary).show();
+                },
+                error: function () {
+                    $('#ai-summary-text').text('Could not generate summary right now. Please try again.').show();
+                },
+                complete: function () {
+                    $btn.prop('disabled', false).text('Generate');
+                }
+            });
+        });
+
         const palette = ['#4e73df', '#1cc88a', '#f6c23e', '#e74a3b', '#36b9cc', '#858796', '#fd7e14'];
 
         // 1. Occupancy by hostel — stacked bar (occupied vs available)
@@ -139,7 +209,7 @@
             data: {
                 labels: @json($revenueTrend['labels']),
                 datasets: [{
-                    label: 'Revenue (৳)',
+                    label: 'Revenue (₹)',
                     data: @json($revenueTrend['data']),
                     borderColor: '#4e73df',
                     backgroundColor: 'rgba(78,115,223,0.15)',

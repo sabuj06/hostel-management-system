@@ -25,9 +25,9 @@
                 </ul>
 
                 <table class="table table-sm mb-0">
-                    <tr><td>Total Amount</td><td class="text-end">৳{{ number_format($invoice->amount, 2) }}</td></tr>
-                    <tr><td>Paid Amount</td><td class="text-end" id="paid-amount">৳{{ number_format($invoice->paid_amount, 2) }}</td></tr>
-                    <tr class="fw-bold"><td>Balance</td><td class="text-end" id="balance-amount">৳{{ number_format($invoice->balance(), 2) }}</td></tr>
+                    <tr><td>Total Amount</td><td class="text-end">₹{{ number_format($invoice->amount, 2) }}</td></tr>
+                    <tr><td>Paid Amount</td><td class="text-end" id="paid-amount">₹{{ number_format($invoice->paid_amount, 2) }}</td></tr>
+                    <tr class="fw-bold"><td>Balance</td><td class="text-end" id="balance-amount">₹{{ number_format($invoice->balance(), 2) }}</td></tr>
                 </table>
             </div>
         </div>
@@ -81,7 +81,7 @@
                             @forelse($invoice->payments as $payment)
                             <tr data-payment-id="{{ $payment->id }}">
                                 <td>{{ $payment->payment_no }}</td>
-                                <td>৳{{ number_format($payment->amount, 2) }}</td>
+                                <td>₹{{ number_format($payment->amount, 2) }}</td>
                                 <td>{{ $payment->payment_date->format('d M Y') }}</td>
                                 <td class="text-capitalize">{{ str_replace('_', ' ', $payment->method) }}</td>
                                 <td>{{ $payment->receivedBy->name ?? '-' }}</td>
@@ -126,8 +126,8 @@
                 data: $form.serialize(),
                 success: function (res) {
                     // Update summary card
-                    $('#paid-amount').text('৳' + parseFloat(res.invoice.paid_amount).toFixed(2));
-                    $('#balance-amount').text('৳' + parseFloat(res.invoice.balance).toFixed(2));
+                    $('#paid-amount').text('₹' + parseFloat(res.invoice.paid_amount).toFixed(2));
+                    $('#balance-amount').text('₹' + parseFloat(res.invoice.balance).toFixed(2));
                     $('#status-badge')
                         .attr('class', 'badge text-capitalize ' + statusBadgeClass[res.invoice.status])
                         .text(res.invoice.status);
@@ -138,7 +138,7 @@
                     $('#payments-tbody').append(`
                         <tr data-payment-id="${p.id}">
                             <td>${p.payment_no}</td>
-                            <td>৳${parseFloat(p.amount).toFixed(2)}</td>
+                            <td>₹${parseFloat(p.amount).toFixed(2)}</td>
                             <td>${p.payment_date}</td>
                             <td class="text-capitalize">${p.method.replace('_',' ')}</td>
                             <td>${p.received_by ? p.received_by.name : '-'}</td>
@@ -176,8 +176,8 @@
                 success: function (res) {
                     $row.fadeOut(200, () => {
                         $row.remove();
-                        $('#paid-amount').text('৳' + parseFloat(res.invoice.paid_amount).toFixed(2));
-                        $('#balance-amount').text('৳' + parseFloat(res.invoice.balance).toFixed(2));
+                        $('#paid-amount').text('₹' + parseFloat(res.invoice.paid_amount).toFixed(2));
+                        $('#balance-amount').text('₹' + parseFloat(res.invoice.balance).toFixed(2));
                         $('#status-badge')
                             .attr('class', 'badge text-capitalize ' + statusBadgeClass[res.invoice.status])
                             .text(res.invoice.status);
