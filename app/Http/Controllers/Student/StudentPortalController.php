@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Student;
 
 use App\Http\Controllers\Controller;
+use App\Models\Attendance;
+use App\Models\AttendanceQrToken;
 use App\Models\Complaint;
 use App\Models\ComplaintCategory;
 use App\Models\Notice;
@@ -10,15 +12,23 @@ use App\Models\Student;
 use App\Models\StudentDocument;
 use App\Services\ComplaintAssistant;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 class StudentPortalController extends Controller
 {
-    // Resolve the Student profile linked to the currently logged-in user.
-    // Throws a friendly error if an admin creates a login but forgets to link it.
+    /*
+    |--------------------------------------------------------------------------
+    | Current Student
+    |--------------------------------------------------------------------------
+    */
+
     private function currentStudent(Request $request): Student
     {
-        $student = Student::where('user_id', $request->user()->id)->first();
+        $student = Student::where(
+            'user_id',
+            $request->user()->id
+        )->first();
 
         if (! $student) {
             abort(
@@ -29,6 +39,7 @@ class StudentPortalController extends Controller
 
         return $student;
     }
+
 
     /*
     |--------------------------------------------------------------------------
@@ -46,21 +57,33 @@ class StudentPortalController extends Controller
         );
 
         $stats = [
-            'open_complaints' => Complaint::where('student_id', $student->id)
-                ->whereIn('status', ['open', 'in_progress'])
+            'open_complaints' => Complaint::where(
+                'student_id',
+                $student->id
+            )
+                ->whereIn(
+                    'status',
+                    ['open', 'in_progress']
+                )
                 ->count(),
 
             'unpaid_invoices' => $student->invoices()
-                ->whereIn('status', ['unpaid', 'partial', 'overdue'])
+                ->whereIn(
+                    'status',
+                    ['unpaid', 'partial', 'overdue']
+                )
                 ->count(),
 
-            'total_due' => $student->invoices()->sum('amount')
-                - $student->invoices()->sum('paid_amount'),
+            'total_due' =>
+                $student->invoices()->sum('amount')
+                -
+                $student->invoices()->sum('paid_amount'),
         ];
 
         $notices = Notice::published()
             ->where(
-                fn ($q) => $q
+                fn ($q) =>
+                $q
                     ->where('audience', 'all')
                     ->orWhere('audience', 'students')
             )
@@ -70,9 +93,14 @@ class StudentPortalController extends Controller
 
         return view(
             'student-portal.dashboard',
-            compact('student', 'stats', 'notices')
+            compact(
+                'student',
+                'stats',
+                'notices'
+            )
         );
     }
+
 
     /*
     |--------------------------------------------------------------------------
@@ -90,13 +118,22 @@ class StudentPortalController extends Controller
         );
     }
 
+
     public function updateProfile(Request $request)
     {
         $student = $this->currentStudent($request);
 
         $data = $request->validate([
-            'phone' => ['nullable', 'string', 'max:20'],
-            'address' => ['nullable', 'string'],
+            'phone' => [
+                'nullable',
+                'string',
+                'max:20'
+            ],
+
+            'address' => [
+                'nullable',
+                'string'
+            ],
         ]);
 
         $student->update($data);
@@ -106,6 +143,7 @@ class StudentPortalController extends Controller
             'Profile updated successfully.'
         );
     }
+
 
     /*
     |--------------------------------------------------------------------------
@@ -128,6 +166,7 @@ class StudentPortalController extends Controller
         );
     }
 
+
     /*
     |--------------------------------------------------------------------------
     | Complaints
@@ -149,6 +188,7 @@ class StudentPortalController extends Controller
         );
     }
 
+
     public function createComplaint(Request $request)
     {
         $categories = ComplaintCategory::all();
@@ -159,6 +199,7 @@ class StudentPortalController extends Controller
         );
     }
 
+
     public function storeComplaint(
         Request $request,
         ComplaintAssistant $assistant
@@ -166,11 +207,18 @@ class StudentPortalController extends Controller
         $student = $this->currentStudent($request);
 
         $data = $request->validate([
-            'title' => ['required', 'string', 'max:255'],
-            'description' => ['required', 'string'],
+            'title' => [
+                'required',
+                'string',
+                'max:255'
+            ],
+
+            'description' => [
+                'required',
+                'string'
+            ],
         ]);
 
-        // Auto-classify complaint
         $suggestion = $assistant->analyze(
             $data['title'],
             $data['description']
@@ -181,26 +229,32 @@ class StudentPortalController extends Controller
         )->room_id;
 
         Complaint::create([
-            'ticket_no' => 'TCK-'
+            'ticket_no' =>
+                'TCK-'
                 . now()->format('ymd')
                 . '-'
                 . Str::upper(Str::random(5)),
 
-            'student_id' => $student->id,
+            'student_id' =>
+                $student->id,
 
             'complaint_category_id' =>
                 $suggestion['suggested_category_id'],
 
-            'room_id' => $roomId,
+            'room_id' =>
+                $roomId,
 
-            'title' => $data['title'],
+            'title' =>
+                $data['title'],
 
-            'description' => $data['description'],
+            'description' =>
+                $data['description'],
 
             'priority' =>
                 $suggestion['suggested_priority'],
 
-            'status' => 'open',
+            'status' =>
+                'open',
         ]);
 
         return redirect()
@@ -211,14 +265,18 @@ class StudentPortalController extends Controller
             );
     }
 
+
     public function showComplaint(
         Request $request,
         Complaint $complaint
     ) {
         $student = $this->currentStudent($request);
 
-        // Students can only view their own complaints
-        if ($complaint->student_id !== $student->id) {
+        if (
+            $complaint->student_id
+            !==
+            $student->id
+        ) {
             abort(
                 403,
                 'You may only view your own complaints.'
@@ -237,6 +295,7 @@ class StudentPortalController extends Controller
         );
     }
 
+
     /*
     |--------------------------------------------------------------------------
     | Attendance
@@ -247,7 +306,7 @@ class StudentPortalController extends Controller
     {
         $student = $this->currentStudent($request);
 
-        $records = \App\Models\Attendance::where(
+        $records = Attendance::where(
             'student_id',
             $student->id
         )
@@ -255,40 +314,289 @@ class StudentPortalController extends Controller
             ->paginate(30);
 
         $summary = [
-            'present' => \App\Models\Attendance::where(
+            'present' => Attendance::where(
                 'student_id',
                 $student->id
             )
-                ->where('status', 'present')
+                ->where(
+                    'status',
+                    'present'
+                )
                 ->count(),
 
-            'absent' => \App\Models\Attendance::where(
+            'absent' => Attendance::where(
                 'student_id',
                 $student->id
             )
-                ->where('status', 'absent')
+                ->where(
+                    'status',
+                    'absent'
+                )
                 ->count(),
 
-            'on_leave' => \App\Models\Attendance::where(
+            'on_leave' => Attendance::where(
                 'student_id',
                 $student->id
             )
-                ->where('status', 'on_leave')
+                ->where(
+                    'status',
+                    'on_leave'
+                )
                 ->count(),
 
-            'late' => \App\Models\Attendance::where(
+            'late' => Attendance::where(
                 'student_id',
                 $student->id
             )
-                ->where('is_late', true)
+                ->where(
+                    'is_late',
+                    true
+                )
                 ->count(),
         ];
 
         return view(
             'student-portal.attendance',
-            compact('records', 'summary')
+            compact(
+                'records',
+                'summary'
+            )
         );
     }
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | Student Attendance QR Scanner Page
+    |--------------------------------------------------------------------------
+    */
+
+    
+
+public function markAttendanceByQr(Request $request)
+{
+    $student = $this->currentStudent($request);
+
+    $data = $request->validate([
+        'token' => ['required', 'string'],
+    ]);
+
+    $qrToken = \App\Models\AttendanceQrToken::where(
+        'token',
+        $data['token']
+    )
+        ->where('status', 'active')
+        ->where('expires_at', '>', now())
+        ->first();
+
+    if (! $qrToken) {
+        return response()->json([
+            'success' => false,
+            'message' => 'QR code expired or invalid.',
+        ], 422);
+    }
+
+    // একই দিনে আগে attendance দেওয়া হয়েছে কিনা
+    $alreadyMarked = \App\Models\Attendance::where(
+        'student_id',
+        $student->id
+    )
+        ->whereDate('date', today())
+        ->exists();
+
+    if ($alreadyMarked) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Your attendance is already marked for today.',
+        ], 422);
+    }
+
+    \App\Models\Attendance::create([
+        'student_id' => $student->id,
+        'date' => today(),
+        'status' => 'present',
+        'is_late' => false,
+    ]);
+
+    return response()->json([
+        'success' => true,
+        'message' => 'Attendance marked successfully.',
+    ]);
+    }
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | Student Scan Attendance QR
+    |--------------------------------------------------------------------------
+    */
+
+    public function scanAttendance(
+        Request $request
+    ) {
+        $student = $this->currentStudent($request);
+
+        $data = $request->validate([
+            'token' => [
+                'required',
+                'string',
+                'max:255'
+            ],
+        ]);
+
+        /*
+        |--------------------------------------------------------------------------
+        | Find QR Token
+        |--------------------------------------------------------------------------
+        */
+
+        $qrToken = AttendanceQrToken::where(
+            'token',
+            $data['token']
+        )
+            ->first();
+
+        if (! $qrToken) {
+
+            return response()->json([
+                'success' => false,
+                'message' =>
+                    'Invalid attendance QR code.'
+            ], 422);
+        }
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | Check Expiry
+        |--------------------------------------------------------------------------
+        */
+
+        if (
+            now()->greaterThan(
+                $qrToken->expires_at
+            )
+        ) {
+
+            return response()->json([
+                'success' => false,
+                'message' =>
+                    'This attendance QR code has expired.'
+            ], 422);
+        }
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | Check Already Used
+        |--------------------------------------------------------------------------
+        */
+
+        if (
+            isset($qrToken->used)
+            &&
+            $qrToken->used
+        ) {
+
+            return response()->json([
+                'success' => false,
+                'message' =>
+                    'This attendance QR code has already been used.'
+            ], 422);
+        }
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | Prevent Duplicate Attendance
+        |--------------------------------------------------------------------------
+        */
+
+        $alreadyMarked = Attendance::where(
+            'student_id',
+            $student->id
+        )
+            ->whereDate(
+                'date',
+                today()
+            )
+            ->exists();
+
+        if ($alreadyMarked) {
+
+            return response()->json([
+                'success' => false,
+                'message' =>
+                    'Your attendance has already been marked today.'
+            ], 422);
+        }
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | Create Attendance
+        |--------------------------------------------------------------------------
+        */
+
+        DB::transaction(function () use (
+            $student,
+            $qrToken
+        ) {
+
+            Attendance::create([
+                'student_id' =>
+                    $student->id,
+
+                'date' =>
+                    today(),
+
+                'status' =>
+                    'present',
+
+                'marked_by' =>
+                    $qrToken->created_by,
+
+                'is_late' =>
+                    false,
+            ]);
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | Mark QR Token Used
+            |--------------------------------------------------------------------------
+            */
+
+            if (
+                $qrToken->getAttribute(
+                    'used'
+                ) !== null
+            ) {
+
+                $qrToken->update([
+                    'used' => true
+                ]);
+            }
+        });
+
+
+        return response()->json([
+            'success' => true,
+
+            'message' =>
+                'Attendance marked successfully!',
+
+            'student' =>
+                $student->name,
+
+            'date' =>
+                now()->format('d M Y'),
+
+            'time' =>
+                now()->format('h:i A'),
+        ]);
+    }
+
 
     /*
     |--------------------------------------------------------------------------
@@ -310,12 +618,14 @@ class StudentPortalController extends Controller
         );
     }
 
+
     public function createLeaveRequest(Request $request)
     {
         return view(
             'student-portal.leave-requests-create'
         );
     }
+
 
     public function storeLeaveRequest(Request $request)
     {
@@ -359,6 +669,7 @@ class StudentPortalController extends Controller
             );
     }
 
+
     /*
     |--------------------------------------------------------------------------
     | Meal Menu
@@ -391,6 +702,7 @@ class StudentPortalController extends Controller
         );
     }
 
+
     /*
     |--------------------------------------------------------------------------
     | Mess Cuts
@@ -411,12 +723,14 @@ class StudentPortalController extends Controller
         );
     }
 
+
     public function createMessCut(Request $request)
     {
         return view(
             'student-portal.mess-cuts-create'
         );
     }
+
 
     public function storeMessCut(Request $request)
     {
@@ -444,7 +758,8 @@ class StudentPortalController extends Controller
 
         $student->messCuts()->create([
             ...$data,
-            'marked_by' => $request->user()->id,
+            'marked_by' =>
+                $request->user()->id,
         ]);
 
         return redirect()
@@ -454,6 +769,7 @@ class StudentPortalController extends Controller
                 'Mess cut submitted. It will be excluded from your next mess bill.'
             );
     }
+
 
     /*
     |--------------------------------------------------------------------------
@@ -475,6 +791,7 @@ class StudentPortalController extends Controller
         );
     }
 
+
     public function uploadDocument(Request $request)
     {
         $student = $this->currentStudent($request);
@@ -493,40 +810,30 @@ class StudentPortalController extends Controller
             ],
         ]);
 
-        /*
-        |--------------------------------------------------------------------------
-        | Store uploaded file
-        |--------------------------------------------------------------------------
-        |
-        | Files will be stored inside:
-        | storage/app/public/student-documents/{student_id}/
-        |
-        */
-
-        $path = $request->file('file')
+        $path = $request
+            ->file('file')
             ->store(
                 'student-documents/' . $student->id,
                 'public'
             );
 
-        /*
-        |--------------------------------------------------------------------------
-        | Create document record
-        |--------------------------------------------------------------------------
-        */
-
         StudentDocument::create([
-            'student_id' => $student->id,
+            'student_id' =>
+                $student->id,
 
             'document_type' =>
                 $data['document_type'],
 
-            'file_path' => $path,
+            'file_path' =>
+                $path,
 
             'original_name' =>
-                $request->file('file')->getClientOriginalName(),
+                $request
+                    ->file('file')
+                    ->getClientOriginalName(),
 
-            'status' => 'pending',
+            'status' =>
+                'pending',
         ]);
 
         return redirect()
@@ -536,4 +843,16 @@ class StudentPortalController extends Controller
                 'Document uploaded successfully. Waiting for admin verification.'
             );
     }
+
+    public function myQrCode(Request $request)
+{
+    $student = $this->currentStudent($request);
+
+    $student->ensureQrToken();
+
+    return view(
+        'student-portal.my-qr-code',
+        compact('student')
+    );
+}
 }

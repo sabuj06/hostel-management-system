@@ -1,0 +1,15 @@
+[90m= [39m[34;4mApp\Models\ActivityLog[39;24m {#8253
+    [34muser_id[39m: [36mnull[39m,
+    [34maction[39m: [32m"[39m[32mtest[39m[32m"[39m,
+    [34mmodule[39m: [32m"[39m[32msystem[39m[32m"[39m,
+    [34msubject_type[39m: [36mnull[39m,
+    [34msubject_id[39m: [36mnull[39m,
+    [34mdescription[39m: [32m"[39m[32mActivity log system test[39m[32m"[39m,
+    [34mold_values[39m: [36mnull[39m,
+    [34mnew_values[39m: [36mnull[39m,
+    [34mip_address[39m: [32m"[39m[32m127.0.0.1[39m[32m"[39m,
+    [34muser_agent[39m: [32m"[39m[32mSymfony[39m[32m"[39m,
+    [34mupdated_at[39m: [32m"[39m[32m2026-08-24 06:21:11[39m[32m"[39m,
+    [34mcreated_at[39m: [32m"[39m[32m2026-08-24 06:21:11[39m[32m"[39m,
+    [34mid[39m: [35m1[39m,
+  }

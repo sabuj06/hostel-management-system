@@ -1,4 +1,4 @@
-@extends('layouts.app')
+@extends('layouts.student')
 
 @section('title', 'My Attendance')
 @section('page-title', 'My Attendance')

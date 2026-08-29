@@ -157,6 +157,81 @@
             </div>
         </div>
     </div>
+
+    <div class="col-md-8">
+        <div class="card shadow-sm border-0">
+            <div class="card-body">
+                <h6 class="mb-3">
+                    Attendance Overview
+                    <span class="text-muted small fw-normal">({{ $attendanceSummary['from'] }} to {{ $attendanceSummary['to'] }})</span>
+                </h6>
+
+                <div class="row g-3 mb-3">
+                    <div class="col-6 col-md-3">
+                        <div class="text-muted small">Present</div>
+                        <div class="fs-4 text-success">{{ $attendanceSummary['overview']['present'] }}</div>
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <div class="text-muted small">Absent</div>
+                        <div class="fs-4 text-danger">{{ $attendanceSummary['overview']['absent'] }}</div>
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <div class="text-muted small">On Leave</div>
+                        <div class="fs-4 text-warning">{{ $attendanceSummary['overview']['on_leave'] }}</div>
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <div class="text-muted small">Late Check-ins</div>
+                        <div class="fs-4 text-secondary">{{ $attendanceSummary['overview']['late'] }}</div>
+                    </div>
+                </div>
+
+                <h6 class="mb-2 mt-3">Students Needing Attention (Lowest Attendance %)</h6>
+
+                @if(count($attendanceSummary['low_attendance_students']) > 0)
+                <div class="table-responsive">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>Student</th>
+                                <th>ID</th>
+                                <th>Present</th>
+                                <th>Marked Days</th>
+                                <th>Attendance %</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach($attendanceSummary['low_attendance_students'] as $student)
+                            <tr>
+                                <td>{{ $student['name'] }}</td>
+                                <td>{{ $student['student_uid'] }}</td>
+                                <td>{{ $student['present_count'] }}</td>
+                                <td>{{ $student['marked_count'] }}</td>
+                                <td>
+                                    <span class="badge bg-{{ $student['percentage'] < 60 ? 'danger' : ($student['percentage'] < 80 ? 'warning' : 'success') }}">
+                                        {{ $student['percentage'] }}%
+                                    </span>
+                                </td>
+                            </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+                @else
+                <p class="text-muted small mb-0">No attendance records in this period yet.</p>
+                @endif
+
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="card shadow-sm border-0 chart-card">
+            <div class="card-body">
+                <h6 class="mb-3">Attendance Breakdown</h6>
+                <canvas id="attendanceChart"></canvas>
+            </div>
+        </div>
+    </div>
 </div>
 @endsection
 
@@ -246,6 +321,24 @@
             data: {
                 labels: @json($roomTypeBreakdown['labels']),
                 datasets: [{ data: @json($roomTypeBreakdown['data']), backgroundColor: palette }]
+            },
+            options: { responsive: true }
+        });
+
+        // 6. Attendance breakdown — doughnut
+        new Chart(document.getElementById('attendanceChart'), {
+            type: 'doughnut',
+            data: {
+                labels: ['Present', 'Absent', 'On Leave', 'Late'],
+                datasets: [{
+                    data: [
+                        {{ $attendanceSummary['overview']['present'] }},
+                        {{ $attendanceSummary['overview']['absent'] }},
+                        {{ $attendanceSummary['overview']['on_leave'] }},
+                        {{ $attendanceSummary['overview']['late'] }}
+                    ],
+                    backgroundColor: ['#1cc88a', '#e74a3b', '#f6c23e', '#858796']
+                }]
             },
             options: { responsive: true }
         });

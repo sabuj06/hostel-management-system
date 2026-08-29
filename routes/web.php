@@ -1,5 +1,10 @@
 <?php
 
+use App\Http\Controllers\Admin\ActivityLogController;
+use App\Http\Controllers\Admin\AssetCategoryController;
+use App\Http\Controllers\Admin\AssetController;
+use App\Http\Controllers\Admin\AssetDamageReportController;
+use App\Http\Controllers\Admin\AttendanceController;
 use App\Http\Controllers\Admin\BedController;
 use App\Http\Controllers\Admin\BlockController;
 use App\Http\Controllers\Admin\ComplaintCategoryController;
@@ -9,22 +14,22 @@ use App\Http\Controllers\Admin\FloorController;
 use App\Http\Controllers\Admin\GuardianController;
 use App\Http\Controllers\Admin\HostelController;
 use App\Http\Controllers\Admin\InvoiceController;
-use App\Http\Controllers\Admin\NoticeController;
-use App\Http\Controllers\Admin\NotificationLogController;
-use App\Http\Controllers\Admin\PolicyDocumentController;
-use App\Http\Controllers\Admin\PaymentController;
-use App\Http\Controllers\Admin\ReportController;
-use App\Http\Controllers\Admin\SmartSearchController;
-use App\Http\Controllers\Admin\StudentDocumentController as AdminStudentDocumentController;
-use App\Http\Controllers\Admin\RoleController;
-use App\Http\Controllers\Admin\RoomAllocationController;
-use App\Http\Controllers\Admin\RoomController;
-use App\Http\Controllers\Admin\StudentController;
-use App\Http\Controllers\Admin\AttendanceController;
 use App\Http\Controllers\Admin\LeaveRequestController;
 use App\Http\Controllers\Admin\MealMenuController;
 use App\Http\Controllers\Admin\MessBillController;
 use App\Http\Controllers\Admin\MessCutController;
+use App\Http\Controllers\Admin\NoticeController;
+use App\Http\Controllers\Admin\NotificationLogController;
+use App\Http\Controllers\Admin\PaymentController;
+use App\Http\Controllers\Admin\PolicyDocumentController;
+use App\Http\Controllers\Admin\QrAttendanceController;
+use App\Http\Controllers\Admin\ReportController;
+use App\Http\Controllers\Admin\RoleController;
+use App\Http\Controllers\Admin\RoomAllocationController;
+use App\Http\Controllers\Admin\RoomController;
+use App\Http\Controllers\Admin\SmartSearchController;
+use App\Http\Controllers\Admin\StudentController;
+use App\Http\Controllers\Admin\StudentDocumentController as AdminStudentDocumentController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Admin\VisitorController;
 use App\Http\Controllers\Auth\LoginController;
@@ -79,6 +84,11 @@ Route::middleware('auth')->group(function () {
         Route::get('/rooms/{room}/available-beds', [RoomAllocationController::class, 'availableBeds'])->name('rooms.available-beds');
     });
 
+    // Activity Logs — admin + warden
+    Route::middleware('role:admin,warden')->group(function () {
+        Route::get('/activity-logs', [ActivityLogController::class, 'index'])->name('activity-logs.index');
+    });
+
     // Phase 4 — Fee & Payment Management (admin + warden only)
     Route::middleware('role:admin,warden')->group(function () {
         Route::resource('fee-structures', FeeStructureController::class)->except(['show']);
@@ -113,11 +123,9 @@ Route::middleware('auth')->group(function () {
     });
 
     // Phase 6 — Notices & Notifications
-    // Notice board: visible to every authenticated role
     Route::get('/notices', [NoticeController::class, 'index'])->name('notices.index');
     Route::post('/notices/{notice}/read', [NoticeController::class, 'markRead'])->name('notices.read');
 
-    // Notice management: admin + warden only
     Route::middleware('role:admin,warden')->group(function () {
         Route::get('/notices-manage', [NoticeController::class, 'manage'])->name('notices.manage');
         Route::get('/notices/create', [NoticeController::class, 'create'])->name('notices.create');
@@ -128,7 +136,6 @@ Route::middleware('auth')->group(function () {
         Route::post('/notices-ai-generate', [NoticeController::class, 'generateDraft'])->name('notices.ai-generate');
     });
 
-    // Translation — available to everyone viewing the notice board (students included)
     Route::post('/notices/{notice}/translate', [NoticeController::class, 'translate'])->name('notices.translate');
 
     // Phase 7 — Visitor Management (admin + warden + staff, gate duty)
@@ -204,7 +211,25 @@ Route::middleware('auth')->group(function () {
         Route::get('/documents', [StudentDocumentController::class, 'index'])->name('documents.index');
         Route::post('/documents', [StudentDocumentController::class, 'store'])->name('documents.store');
         Route::delete('/documents/{document}', [StudentDocumentController::class, 'destroy'])->name('documents.destroy');
+
+        // Student's own QR code (for staff to scan at gate/attendance)
+        Route::get('/my-qr-code', [StudentPortalController::class, 'myQrCode'])->name('my-qr-code');
     });
+});
+
+// Phase 15 — Inventory & Asset Management (admin + warden)
+Route::middleware(['auth', 'role:admin,warden'])->group(function () {
+    Route::resource('assets', AssetController::class);
+
+    Route::post('/assets/{asset}/assign', [AssetController::class, 'assign'])->name('assets.assign');
+    Route::post('/assets/{asset}/write-off', [AssetController::class, 'writeOff'])->name('assets.write-off');
+
+    Route::resource('asset-categories', AssetCategoryController::class)->except(['show']);
+
+    Route::resource('asset-damage-reports', AssetDamageReportController::class)->except(['show']);
+
+    Route::patch('/asset-damage-reports/{assetDamageReport}/status', [AssetDamageReportController::class, 'updateStatus'])
+        ->name('asset-damage-reports.status');
 });
 
 // Receipts — accessible to any authenticated role, self-scoped inside the controller
@@ -214,7 +239,6 @@ Route::middleware('auth')->group(function () {
 });
 
 // Public webhook — no auth, no CSRF (exempted in bootstrap/app.php).
-// Razorpay calls this directly from their servers, not from a browser.
 Route::post('/webhooks/razorpay', [PaymentWebhookController::class, 'razorpay'])->name('webhooks.razorpay');
 
 // Phase 12 — Attendance / Curfew Tracking + Leave Requests (admin + warden + staff)
@@ -224,6 +248,10 @@ Route::middleware(['auth', 'role:admin,warden,staff'])->group(function () {
     Route::post('/attendance/mark-all-present', [AttendanceController::class, 'markAllPresent'])->name('attendance.mark-all-present');
     Route::get('/attendance-curfew-settings', [AttendanceController::class, 'curfewSettings'])->name('attendance.curfew-settings');
     Route::post('/attendance-curfew-settings', [AttendanceController::class, 'saveCurfewSettings'])->name('attendance.curfew-settings.save');
+
+    Route::get('/attendance-qr-scanner', [QrAttendanceController::class, 'scanner'])->name('attendance.qr-scanner');
+    Route::post('/attendance-qr-scan', [QrAttendanceController::class, 'scan'])->name('attendance.qr-scan');
+    Route::get('/students/{student}/id-card', [QrAttendanceController::class, 'idCard'])->name('students.id-card');
 
     Route::get('/leave-requests', [LeaveRequestController::class, 'index'])->name('leave-requests.index');
     Route::post('/leave-requests/{leaveRequest}/review', [LeaveRequestController::class, 'review'])->name('leave-requests.review');

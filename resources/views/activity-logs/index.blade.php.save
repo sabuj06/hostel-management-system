@@ -1,0 +1,313 @@
+@extends('layouts.app')
+
+@section('title', 'Activity Logs')
+@section('page-title', 'Activity / Audit Logs')
+
+@section('content')
+
+<div class="container-fluid">
+
+    {{-- Header --}}
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h4 class="mb-1">
+                <i class="bi bi-clock-history"></i>
+                Activity / Audit Logs
+            </h4>
+
+            <p class="text-muted mb-0">
+                Track who changed what and when.
+            </p>
+        </div>
+    </div>
+
+
+    {{-- Filters --}}
+    <div class="card shadow-sm border-0 mb-4">
+        <div class="card-body">
+
+            <form method="GET" action="{{ route('activity-logs.index') }}">
+
+                <div class="row g-3">
+
+                    {{-- Search --}}
+                    <div class="col-md-3">
+                        <label class="form-label">
+                            Search
+                        </label>
+
+                        <input
+                            type="text"
+                            name="search"
+                            class="form-control"
+                            placeholder="Search activity..."
+                            value="{{ request('search') }}"
+                        >
+                    </div>
+
+
+                    {{-- Action --}}
+                    <div class="col-md-2">
+                        <label class="form-label">
+                            Action
+                        </label>
+
+                        <select name="action" class="form-select">
+
+                            <option value="">
+                                All Actions
+                            </option>
+
+                            @foreach($actions as $action)
+
+                                <option
+                                    value="{{ $action }}"
+                                    @selected(request('action') === $action)
+                                >
+                                    {{ ucfirst($action) }}
+                                </option>
+
+                            @endforeach
+
+                        </select>
+                    </div>
+
+
+                    {{-- Module --}}
+                    <div class="col-md-2">
+                        <label class="form-label">
+                            Module
+                        </label>
+
+                        <select name="module" class="form-select">
+
+                            <option value="">
+                                All Modules
+                            </option>
+
+                            @foreach($modules as $module)
+
+                                <option
+                                    value="{{ $module }}"
+                                    @selected(request('module') === $module)
+                                >
+                                    {{ ucfirst($module) }}
+                                </option>
+
+                            @endforeach
+
+                        </select>
+                    </div>
+
+
+                    {{-- User --}}
+                    <div class="col-md-2">
+                        <label class="form-label">
+                            User
+                        </label>
+
+                        <select name="user_id" class="form-select">
+
+                            <option value="">
+                                All Users
+                            </option>
+
+                            @foreach($users as $user)
+
+                                <option
+                                    value="{{ $user->id }}"
+                                    @selected((string) request('user_id') === (string) $user->id)
+                                >
+                                    {{ $user->name }}
+                                </option>
+
+                            @endforeach
+
+                        </select>
+                    </div>
+
+
+                    {{-- Buttons --}}
+                    <div class="col-md-3 d-flex align-items-end gap-2">
+
+                        <button class="btn btn-primary">
+                            <i class="bi bi-search"></i>
+                            Filter
+                        </button>
+
+                        <a
+                            href="{{ route('activity-logs.index') }}"
+                            class="btn btn-outline-secondary"
+                        >
+                            Reset
+                        </a>
+
+                    </div>
+
+                </div>
+
+            </form>
+
+        </div>
+    </div>
+
+
+    {{-- Activity Table --}}
+    <div class="card shadow-sm border-0">
+
+        <div class="card-body p-0">
+
+            <div class="table-responsive">
+
+                <table class="table table-hover align-middle mb-0">
+
+                    <thead class="table-light">
+
+                        <tr>
+                            <th>#</th>
+                            <th>User</th>
+                            <th>Action</th>
+                            <th>Module</th>
+                            <th>Description</th>
+                            <th>IP Address</th>
+                            <th>Date / Time</th>
+                        </tr>
+
+                    </thead>
+
+                    <tbody>
+
+                    @forelse($logs as $log)
+
+                        <tr>
+
+                            <td>
+                                {{ $logs->firstItem() + $loop->index }}
+                            </td>
+
+
+                            {{-- User --}}
+                            <td>
+
+                                @if($log->user)
+
+                                    <div class="fw-semibold">
+                                        {{ $log->user->name }}
+                                    </div>
+
+                                    @if($log->user->role)
+                                        <small class="text-muted">
+                                            {{ ucfirst($log->user->role->name) }}
+                                        </small>
+                                    @endif
+
+                                @else
+
+                                    <span class="text-muted">
+                                        System
+                                    </span>
+
+                                @endif
+
+                            </td>
+
+
+                            {{-- Action --}}
+                            <td>
+
+                                @php
+                                    $badgeClass = match($log->action) {
+                                        'created' => 'success',
+                                        'updated' => 'primary',
+                                        'deleted' => 'danger',
+                                        'login' => 'success',
+                                        'logout' => 'secondary',
+                                        default => 'dark',
+                                    };
+                                @endphp
+
+                                <span class="badge bg-{{ $badgeClass }}">
+                                    {{ ucfirst($log->action) }}
+                                </span>
+
+                            </td>
+
+
+                            {{-- Module --}}
+                            <td>
+                                <span class="badge bg-light text-dark border">
+                                    {{ ucfirst($log->module) }}
+                                </span>
+                            </td>
+
+
+                            {{-- Description --}}
+                            <td>
+                                {{ $log->description ?? '-' }}
+                            </td>
+
+
+                            {{-- IP --}}
+                            <td>
+                                <small class="text-muted">
+                                    {{ $log->ip_address ?? '-' }}
+                                </small>
+                            </td>
+
+
+                            {{-- Date --}}
+                            <td>
+                                <div>
+                                    {{ $log->created_at->format('d M Y') }}
+                                </div>
+
+                                <small class="text-muted">
+                                    {{ $log->created_at->format('h:i A') }}
+                                </small>
+                            </td>
+
+                        </tr>
+
+                    @empty
+
+                        <tr>
+
+                            <td colspan="7" class="text-center py-5">
+
+                                <i class="bi bi-clock-history fs-1 text-muted"></i>
+
+                                <div class="mt-2 text-muted">
+                                    No activity logs found.
+                                </div>
+
+                            </td>
+
+                        </tr>
+
+                    @endforelse
+
+                    </tbody>
+
+                </table>
+
+            </div>
+
+        </div>
+
+
+        {{-- Pagination --}}
+        @if($logs->hasPages())
+
+            <div class="card-footer bg-white">
+
+                {{ $logs->links() }}
+
+            </div>
+
+        @endif
+
+    </div>
+
+</div>
+
+@endsection

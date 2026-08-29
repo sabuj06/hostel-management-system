@@ -72,7 +72,12 @@
                     </td>
                     <td class="text-end">
                         @if($asset->status === 'active' && $asset->quantity_available > 0)
-                        <a href="{{ route('assets.assign-form', $asset) }}" class="btn btn-sm btn-outline-primary">Assign to Room</a>
+                        @if($asset->status === 'active' && $asset->quantity_available > 0)
+    <a href="{{ route('assets.assign', $asset) }}"
+       class="btn btn-sm btn-outline-primary">
+        Assign to Room
+    </a>
+@endif
                         @endif
                         @if($asset->status !== 'written_off')
                         <form method="POST" action="{{ route('assets.write-off', $asset) }}" class="d-inline"

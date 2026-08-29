@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\LeaveRequest;
 use Illuminate\Http\Request;
+use App\ActivityLogger;
 
 class LeaveRequestController extends Controller
 {
@@ -35,6 +36,14 @@ class LeaveRequestController extends Controller
             'reviewed_at' => now(),
         ]);
 
-        return back()->with('success', 'Leave request reviewed successfully.');
+        ActivityLogger::log(
+            'leave_request_reviewed',
+            "Leave request for student ID {$leaveRequest->student_id} was {$validated['status']} by user ID " . auth()->id()
+        );
+
+        return back()->with(
+            'success',
+            'Leave request reviewed successfully.'
+        );
     }
 }

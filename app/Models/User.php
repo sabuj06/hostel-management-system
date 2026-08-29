@@ -7,6 +7,8 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use App\Models\ActivityLog;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class User extends Authenticatable
 {
@@ -53,4 +55,12 @@ class User extends Authenticatable
     {
         return $this->status === 'active';
     }
+    public function activityLogs(): HasMany
+{
+    return $this->hasMany(ActivityLog::class);
+}
+public function student()
+{
+    return $this->hasOne(\App\Models\Student::class);
+}
 }

@@ -1,4 +1,4 @@
-@extends('layouts.app')
+@extends(auth()->user()->hasRole('student') ? 'layouts.student' : 'layouts.app')
 
 @section('title', 'Notice Board')
 @section('page-title', 'Notice Board')
@@ -44,7 +44,6 @@
                             <option value="Bengali">বাংলা (Bengali)</option>
                             <option value="Hindi">हिन्दी (Hindi)</option>
                             <option value="English">English</option>
-                            <option value="Arabic">العربية (Arabic)</option>
                         </select>
                         <button class="btn btn-sm btn-outline-secondary translate-btn" style="display:none;">
                             <i class="bi bi-translate"></i> Translate

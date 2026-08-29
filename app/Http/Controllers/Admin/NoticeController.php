@@ -9,6 +9,7 @@ use App\Models\Student;
 use App\Services\ContentAssistantService;
 use App\Services\NotificationService;
 use Illuminate\Http\Request;
+use App\ActivityLogger;
 
 class NoticeController extends Controller
 {
@@ -25,109 +26,259 @@ class NoticeController extends Controller
 
         $notices = Notice::with('postedBy', 'hostel')
             ->published()
-            ->when(! $user->hasRole('admin') && ! $user->hasRole('warden'), function ($q) use ($user) {
-                // Non-management users only see notices meant for them
-                $q->where(function ($q2) use ($user) {
-                    $q2->where('audience', 'all');
-                    if ($user->hasRole('student')) {
-                        $q2->orWhere('audience', 'students');
-                    } else {
-                        $q2->orWhere('audience', 'staff');
-                    }
-                });
-            })
+            ->when(
+                ! $user->hasRole('admin') && ! $user->hasRole('warden'),
+                function ($q) use ($user) {
+                    $q->where(function ($q2) use ($user) {
+                        $q2->where('audience', 'all');
+
+                        if ($user->hasRole('student')) {
+                            $q2->orWhere('audience', 'students');
+                        } else {
+                            $q2->orWhere('audience', 'staff');
+                        }
+                    });
+                }
+            )
             ->orderByDesc('priority')
             ->latest('publish_date')
             ->paginate(10);
 
-        $readIds = \App\Models\NoticeRead::where('user_id', $user->id)->pluck('notice_id')->toArray();
+        $readIds = \App\Models\NoticeRead::where(
+            'user_id',
+            $user->id
+        )->pluck('notice_id')->toArray();
 
-        return view('notices.index', compact('notices', 'readIds'));
+        return view(
+            'notices.index',
+            compact('notices', 'readIds')
+        );
     }
 
     // Management-only: list including drafts, for editing
     public function manage(Request $request)
     {
         $notices = Notice::with('postedBy')
-            ->when($request->status, fn ($q) => $q->where('status', $request->status))
+            ->when(
+                $request->status,
+                fn ($q) => $q->where('status', $request->status)
+            )
             ->latest()
             ->paginate(10)
             ->withQueryString();
 
-        return view('notices.manage', compact('notices'));
+        return view(
+            'notices.manage',
+            compact('notices')
+        );
     }
 
     public function create()
     {
         $hostels = Hostel::active()->get();
 
-        return view('notices.create', compact('hostels'));
+        return view(
+            'notices.create',
+            compact('hostels')
+        );
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | Create Notice
+    |--------------------------------------------------------------------------
+    */
     public function store(Request $request)
     {
         $data = $this->validated($request);
+
         $data['posted_by'] = $request->user()->id;
-        $data['publish_date'] = $data['publish_date'] ?? now()->format('Y-m-d');
+        $data['publish_date'] =
+            $data['publish_date'] ?? now()->format('Y-m-d');
 
         $notice = Notice::create($data);
 
-        if ($request->boolean('notify_now') && $notice->status === 'published') {
-            $this->notifyStudentsAbout($notice, $request->user()->id);
+        /*
+        |--------------------------------------------------------------------------
+        | Activity Log
+        |--------------------------------------------------------------------------
+        */
+
+        ActivityLogger::log(
+            action: 'created',
+            module: 'notices',
+            description:
+                "Notice created: {$notice->title} ({$notice->status})",
+            subject: $notice,
+            newValues: $notice->fresh()->toArray()
+        );
+
+        if (
+            $request->boolean('notify_now') &&
+            $notice->status === 'published'
+        ) {
+            $this->notifyStudentsAbout(
+                $notice,
+                $request->user()->id
+            );
         }
 
-        return redirect()->route('notices.manage')->with('status', 'Notice published successfully.');
+        return redirect()
+            ->route('notices.manage')
+            ->with(
+                'status',
+                'Notice published successfully.'
+            );
     }
 
     public function edit(Notice $notice)
     {
         $hostels = Hostel::active()->get();
 
-        return view('notices.edit', compact('notice', 'hostels'));
+        return view(
+            'notices.edit',
+            compact('notice', 'hostels')
+        );
     }
 
-    public function update(Request $request, Notice $notice)
-    {
-        $notice->update($this->validated($request));
+    /*
+    |--------------------------------------------------------------------------
+    | Update Notice
+    |--------------------------------------------------------------------------
+    */
+    public function update(
+        Request $request,
+        Notice $notice
+    ) {
+        // Save old values before update
+        $oldValues = $notice->toArray();
 
-        return redirect()->route('notices.manage')->with('status', 'Notice updated successfully.');
+        $notice->update(
+            $this->validated($request)
+        );
+
+        $notice->refresh();
+
+        /*
+        |--------------------------------------------------------------------------
+        | Activity Log
+        |--------------------------------------------------------------------------
+        */
+
+        ActivityLogger::log(
+            action: 'updated',
+            module: 'notices',
+            description:
+                "Notice updated: {$notice->title}",
+            subject: $notice,
+            oldValues: $oldValues,
+            newValues: $notice->toArray()
+        );
+
+        return redirect()
+            ->route('notices.manage')
+            ->with(
+                'status',
+                'Notice updated successfully.'
+            );
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | Delete Notice
+    |--------------------------------------------------------------------------
+    */
     public function destroy(Notice $notice)
     {
+        // Save data before deletion
+        $oldValues = $notice->toArray();
+
+        $noticeTitle = $notice->title;
+
         $notice->delete();
 
-        return back()->with('status', 'Notice deleted successfully.');
+        /*
+        |--------------------------------------------------------------------------
+        | Activity Log
+        |--------------------------------------------------------------------------
+        */
+
+        ActivityLogger::log(
+            action: 'deleted',
+            module: 'notices',
+            description:
+                "Notice deleted: {$noticeTitle}",
+            subject: $notice,
+            oldValues: $oldValues
+        );
+
+        return back()->with(
+            'status',
+            'Notice deleted successfully.'
+        );
     }
 
     // AJAX: mark a notice as read for the current user
-    public function markRead(Request $request, Notice $notice)
-    {
-        $notice->reads()->firstOrCreate(['user_id' => $request->user()->id]);
+    public function markRead(
+        Request $request,
+        Notice $notice
+    ) {
+        $notice->reads()->firstOrCreate([
+            'user_id' => $request->user()->id
+        ]);
 
-        return response()->json(['success' => true]);
+        return response()->json([
+            'success' => true
+        ]);
     }
 
     // AJAX: turn a 1-2 line admin draft into a full polished notice
     public function generateDraft(Request $request)
     {
-        $data = $request->validate(['draft' => ['required', 'string', 'max:500']]);
+        $data = $request->validate([
+            'draft' => [
+                'required',
+                'string',
+                'max:500'
+            ]
+        ]);
 
-        return response()->json($this->contentAssistant->generateNotice($data['draft']));
+        return response()->json(
+            $this->contentAssistant->generateNotice(
+                $data['draft']
+            )
+        );
     }
 
-    // AJAX: translate a notice's title+body into the requested language
-    public function translate(Request $request, Notice $notice)
-    {
-        $data = $request->validate(['language' => ['required', 'string', 'max:50']]);
+    // AJAX: translate a notice's title+body
+    public function translate(
+        Request $request,
+        Notice $notice
+    ) {
+        $data = $request->validate([
+            'language' => [
+                'required',
+                'string',
+                'max:50'
+            ]
+        ]);
 
-        $title = $this->contentAssistant->translate($notice->title, $data['language']);
-        $body = $this->contentAssistant->translate($notice->body, $data['language']);
+        $title = $this->contentAssistant->translate(
+            $notice->title,
+            $data['language']
+        );
+
+        $body = $this->contentAssistant->translate(
+            $notice->body,
+            $data['language']
+        );
 
         return response()->json([
             'title' => $title['text'],
             'body' => $body['text'],
-            'translated' => $title['translated'] && $body['translated'],
+            'translated' =>
+                $title['translated'] &&
+                $body['translated'],
             'note' => $title['note'] ?? null,
         ]);
     }
@@ -135,33 +286,83 @@ class NoticeController extends Controller
     private function validated(Request $request): array
     {
         return $request->validate([
-            'title' => ['required', 'string', 'max:255'],
-            'body' => ['required', 'string'],
-            'audience' => ['required', 'in:all,students,staff,hostel'],
-            'hostel_id' => ['nullable', 'exists:hostels,id', 'required_if:audience,hostel'],
-            'priority' => ['required', 'in:normal,important,urgent'],
-            'publish_date' => ['nullable', 'date'],
-            'expiry_date' => ['nullable', 'date', 'after_or_equal:publish_date'],
-            'status' => ['required', 'in:draft,published,archived'],
-            'notify_now' => ['nullable', 'boolean'],
+            'title' => [
+                'required',
+                'string',
+                'max:255'
+            ],
+            'body' => [
+                'required',
+                'string'
+            ],
+            'audience' => [
+                'required',
+                'in:all,students,staff,hostel'
+            ],
+            'hostel_id' => [
+                'nullable',
+                'exists:hostels,id',
+                'required_if:audience,hostel'
+            ],
+            'priority' => [
+                'required',
+                'in:normal,important,urgent'
+            ],
+            'publish_date' => [
+                'nullable',
+                'date'
+            ],
+            'expiry_date' => [
+                'nullable',
+                'date',
+                'after_or_equal:publish_date'
+            ],
+            'status' => [
+                'required',
+                'in:draft,published,archived'
+            ],
+            'notify_now' => [
+                'nullable',
+                'boolean'
+            ],
         ]);
     }
 
-    // Fans the notice out to every matching student's email/SMS.
-    // Runs synchronously — fine for small/medium hostels; for large
-    // rosters, dispatch this via a queued job instead.
-    private function notifyStudentsAbout(Notice $notice, int $triggeredBy): void
-    {
-        $students = Student::where('status', 'active')
-            ->when($notice->audience === 'hostel', function ($q) use ($notice) {
-                $q->whereHas('currentAllocation.room.floor.block', fn ($q2) => $q2->where('hostel_id', $notice->hostel_id));
-            })
+    // Fans the notice out to matching students
+    private function notifyStudentsAbout(
+        Notice $notice,
+        int $triggeredBy
+    ): void {
+        $students = Student::where(
+            'status',
+            'active'
+        )
+            ->when(
+                $notice->audience === 'hostel',
+                function ($q) use ($notice) {
+                    $q->whereHas(
+                        'currentAllocation.room.floor.block',
+                        fn ($q2) =>
+                            $q2->where(
+                                'hostel_id',
+                                $notice->hostel_id
+                            )
+                    );
+                }
+            )
             ->get();
 
-        $message = "{$notice->title}\n\n{$notice->body}";
+        $message =
+            "{$notice->title}\n\n{$notice->body}";
 
         foreach ($students as $student) {
-            $this->notifications->notifyStudent($student, "Notice: {$notice->title}", $message, $notice, $triggeredBy);
+            $this->notifications->notifyStudent(
+                $student,
+                "Notice: {$notice->title}",
+                $message,
+                $notice,
+                $triggeredBy
+            );
         }
     }
 }

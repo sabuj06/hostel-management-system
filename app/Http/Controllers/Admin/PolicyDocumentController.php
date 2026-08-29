@@ -9,12 +9,15 @@ use App\Services\PolicyQaService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use App\ActivityLogger;
 
 class PolicyDocumentController extends Controller
 {
     public function index()
     {
-        $documents = PolicyDocument::with('uploadedBy')->latest()->paginate(10);
+        $documents = PolicyDocument::with('uploadedBy')
+            ->latest()
+            ->paginate(10);
 
         return view('policy-documents.index', compact('documents'));
     }
@@ -28,7 +31,7 @@ class PolicyDocumentController extends Controller
     {
         $data = $request->validate([
             'title' => ['required', 'string', 'max:255'],
-            'file' => ['required', 'file', 'mimes:pdf,txt', 'max:10240'], // 10MB
+            'file' => ['required', 'file', 'mimes:pdf,txt', 'max:10240'],
         ]);
 
         $file = $request->file('file');
@@ -43,10 +46,15 @@ class PolicyDocumentController extends Controller
         ]);
 
         try {
-            $text = $this->extractText($file->getRealPath(), $file->getClientOriginalExtension());
+            $text = $this->extractText(
+                $file->getRealPath(),
+                $file->getClientOriginalExtension()
+            );
 
             if (trim($text) === '') {
-                throw new \RuntimeException('No extractable text found in this file.');
+                throw new \RuntimeException(
+                    'No extractable text found in this file.'
+                );
             }
 
             $chunks = $qaService->chunkText($text);
@@ -60,26 +68,67 @@ class PolicyDocumentController extends Controller
                     ]);
                 }
 
-                $document->update(['status' => 'ready', 'chunk_count' => count($chunks)]);
+                $document->update([
+                    'status' => 'ready',
+                    'chunk_count' => count($chunks),
+                ]);
             });
 
-            $message = count($chunks) . ' section(s) indexed and ready for student Q&A.';
+            ActivityLogger::log(
+                action: 'created',
+                module: 'policy_documents',
+                description: "Policy document '{$document->title}' uploaded and indexed successfully with " . count($chunks) . " section(s)",
+                subject: $document,
+                newValues: $document->fresh()->toArray()
+            );
+
+            $message = count($chunks)
+                . ' section(s) indexed and ready for student Q&A.';
         } catch (\Throwable $e) {
             report($e);
-            $document->update(['status' => 'failed']);
-            $message = 'Upload saved, but text extraction failed: ' . $e->getMessage();
+
+            $document->update([
+                'status' => 'failed',
+            ]);
+
+            ActivityLogger::log(
+                action: 'upload_failed',
+                module: 'policy_documents',
+                description: "Policy document '{$document->title}' uploaded but text extraction/indexing failed",
+                subject: $document,
+                newValues: [
+                    'status' => 'failed',
+                    'error' => $e->getMessage(),
+                ]
+            );
+
+            $message = 'Upload saved, but text extraction failed: '
+                . $e->getMessage();
         }
 
-        return redirect()->route('policy-documents.index')->with('status', $message);
+        return redirect()
+            ->route('policy-documents.index')
+            ->with('status', $message);
     }
 
     public function destroy(PolicyDocument $policyDocument)
     {
+        $oldValues = $policyDocument->toArray();
+        $documentTitle = $policyDocument->title;
+
         if ($policyDocument->file_path) {
             Storage::delete($policyDocument->file_path);
         }
 
-        $policyDocument->delete(); // chunks cascade-delete via FK
+        $policyDocument->delete();
+
+        ActivityLogger::log(
+            action: 'deleted',
+            module: 'policy_documents',
+            description: "Policy document '{$documentTitle}' deleted",
+            subject: $policyDocument,
+            oldValues: $oldValues
+        );
 
         return back()->with('status', 'Policy document removed.');
     }
@@ -94,7 +143,9 @@ class PolicyDocumentController extends Controller
         }
 
         if (! class_exists(\Smalot\PdfParser\Parser::class)) {
-            throw new \RuntimeException('PDF support requires the smalot/pdfparser package. Run: composer require smalot/pdfparser — or upload a .txt file instead.');
+            throw new \RuntimeException(
+                'PDF support requires the smalot/pdfparser package. Run: composer require smalot/pdfparser — or upload a .txt file instead.'
+            );
         }
 
         $parser = new \Smalot\PdfParser\Parser();

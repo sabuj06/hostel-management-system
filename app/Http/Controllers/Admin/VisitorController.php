@@ -7,28 +7,51 @@ use App\Models\Student;
 use App\Models\Visitor;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
+use App\ActivityLogger;
 
 class VisitorController extends Controller
 {
     public function index(Request $request)
     {
         $visitors = Visitor::with('student', 'approvedBy')
-            ->when($request->status, fn ($q) => $q->where('status', $request->status))
+            ->when(
+                $request->status,
+                fn ($q) => $q->where('status', $request->status)
+            )
             ->when($request->search, function ($q) use ($request) {
                 $q->where('visitor_name', 'like', "%{$request->search}%")
-                    ->orWhereHas('student', fn ($q2) => $q2->where('name', 'like', "%{$request->search}%"));
+                    ->orWhereHas(
+                        'student',
+                        fn ($q2) => $q2->where(
+                            'name',
+                            'like',
+                            "%{$request->search}%"
+                        )
+                    );
             })
-            ->when($request->date, fn ($q) => $q->whereDate('check_in_time', $request->date))
+            ->when(
+                $request->date,
+                fn ($q) => $q->whereDate(
+                    'check_in_time',
+                    $request->date
+                )
+            )
             ->latest('check_in_time')
             ->paginate(10)
             ->withQueryString();
 
         $stats = [
             'currently_in' => Visitor::currentlyIn()->count(),
-            'today_total' => Visitor::whereDate('check_in_time', now())->count(),
+            'today_total' => Visitor::whereDate(
+                'check_in_time',
+                now()
+            )->count(),
         ];
 
-        return view('visitors.index', compact('visitors', 'stats'));
+        return view(
+            'visitors.index',
+            compact('visitors', 'stats')
+        );
     }
 
     public function create()
@@ -36,37 +59,90 @@ class VisitorController extends Controller
         return view('visitors.create');
     }
 
-    // AJAX: live student search (typeahead) — returns matching students as JSON
+    // AJAX: live student search
     public function searchStudents(Request $request)
     {
         $term = $request->get('q', '');
 
         $students = Student::where('status', 'active')
             ->where(function ($q) use ($term) {
-                $q->where('name', 'like', "%{$term}%")
-                    ->orWhere('student_uid', 'like', "%{$term}%");
+                $q->where(
+                    'name',
+                    'like',
+                    "%{$term}%"
+                )
+                ->orWhere(
+                    'student_uid',
+                    'like',
+                    "%{$term}%"
+                );
             })
             ->limit(10)
-            ->get(['id', 'name', 'student_uid']);
+            ->get([
+                'id',
+                'name',
+                'student_uid'
+            ]);
 
         return response()->json($students);
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | Visitor Check In
+    |--------------------------------------------------------------------------
+    */
     public function store(Request $request)
     {
         $data = $request->validate([
-            'student_id' => ['required', 'exists:students,id'],
-            'visitor_name' => ['required', 'string', 'max:255'],
-            'phone' => ['nullable', 'string', 'max:20'],
-            'relation' => ['required', 'in:father,mother,brother,sister,relative,friend,other'],
-            'purpose' => ['nullable', 'string', 'max:255'],
-            'id_proof_type' => ['nullable', 'string', 'max:100'],
-            'id_proof_number' => ['nullable', 'string', 'max:100'],
-            'total_visitors' => ['required', 'integer', 'min:1', 'max:20'],
-            'remarks' => ['nullable', 'string'],
+            'student_id' => [
+                'required',
+                'exists:students,id'
+            ],
+            'visitor_name' => [
+                'required',
+                'string',
+                'max:255'
+            ],
+            'phone' => [
+                'nullable',
+                'string',
+                'max:20'
+            ],
+            'relation' => [
+                'required',
+                'in:father,mother,brother,sister,relative,friend,other'
+            ],
+            'purpose' => [
+                'nullable',
+                'string',
+                'max:255'
+            ],
+            'id_proof_type' => [
+                'nullable',
+                'string',
+                'max:100'
+            ],
+            'id_proof_number' => [
+                'nullable',
+                'string',
+                'max:100'
+            ],
+            'total_visitors' => [
+                'required',
+                'integer',
+                'min:1',
+                'max:20'
+            ],
+            'remarks' => [
+                'nullable',
+                'string'
+            ],
         ]);
 
-        Visitor::create([
+        $student = Student::findOrFail($data['student_id']);
+
+        $visitor = Visitor::create([
             ...$data,
             'gate_pass_no' => $this->generateGatePassNo(),
             'check_in_time' => now(),
@@ -74,32 +150,89 @@ class VisitorController extends Controller
             'approved_by' => $request->user()->id,
         ]);
 
-        return redirect()->route('visitors.index')->with('status', 'Visitor checked in successfully.');
+        /*
+        |--------------------------------------------------------------------------
+        | Activity Log
+        |--------------------------------------------------------------------------
+        */
+        ActivityLogger::log(
+            action: 'created',
+            module: 'visitors',
+            description: "Visitor checked in: {$visitor->visitor_name} for student {$student->name} - Gate Pass {$visitor->gate_pass_no}",
+            subject: $visitor,
+            newValues: $visitor->toArray()
+        );
+
+        return redirect()
+            ->route('visitors.index')
+            ->with(
+                'status',
+                'Visitor checked in successfully.'
+            );
     }
 
-    // AJAX: check a visitor out without leaving the list page
+    /*
+    |--------------------------------------------------------------------------
+    | Visitor Check Out
+    |--------------------------------------------------------------------------
+    */
     public function checkout(Visitor $visitor)
     {
         if ($visitor->status === 'checked_out') {
-            return response()->json(['success' => false, 'message' => 'Visitor already checked out.'], 422);
+            return response()->json([
+                'success' => false,
+                'message' => 'Visitor already checked out.'
+            ], 422);
         }
+
+        // Old data before update
+        $oldValues = $visitor->toArray();
 
         $visitor->update([
             'status' => 'checked_out',
             'check_out_time' => now(),
         ]);
 
+        $visitor->refresh();
+
+        /*
+        |--------------------------------------------------------------------------
+        | Activity Log
+        |--------------------------------------------------------------------------
+        */
+        ActivityLogger::log(
+            action: 'checked_out',
+            module: 'visitors',
+            description: "Visitor checked out: {$visitor->visitor_name} - Gate Pass {$visitor->gate_pass_no}",
+            subject: $visitor,
+            oldValues: $oldValues,
+            newValues: $visitor->toArray()
+        );
+
         return response()->json([
             'success' => true,
-            'check_out_time' => $visitor->check_out_time->format('d M Y, h:i A'),
+            'check_out_time' => $visitor->check_out_time->format(
+                'd M Y, h:i A'
+            ),
         ]);
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | Generate Gate Pass Number
+    |--------------------------------------------------------------------------
+    */
     private function generateGatePassNo(): string
     {
         do {
-            $no = 'GP-' . now()->format('ymd') . '-' . Str::upper(Str::random(4));
-        } while (Visitor::where('gate_pass_no', $no)->exists());
+            $no = 'GP-' .
+                now()->format('ymd') .
+                '-' .
+                Str::upper(Str::random(4));
+
+        } while (
+            Visitor::where('gate_pass_no', $no)->exists()
+        );
 
         return $no;
     }

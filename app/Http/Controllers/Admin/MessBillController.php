@@ -11,6 +11,7 @@ use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use App\ActivityLogger;
 
 class MessBillController extends Controller
 {
@@ -40,14 +41,23 @@ class MessBillController extends Controller
         $created = 0;
         $skipped = 0;
 
-        DB::transaction(function () use ($students, $start, $end, $totalDays, &$created, &$skipped) {
+        DB::transaction(function () use (
+            $students,
+            $start,
+            $end,
+            $totalDays,
+            &$created,
+            &$skipped
+        ) {
             foreach ($students as $student) {
                 $hostelId = $student->currentAllocation->room->floor->block->hostel_id;
-                $rate = MessRate::where('hostel_id', $hostelId)->value('rate_per_day');
+
+                $rate = MessRate::where('hostel_id', $hostelId)
+                    ->value('rate_per_day');
 
                 if (! $rate) {
                     $skipped++;
-                    continue; // no rate configured for this student's hostel — skip rather than guess
+                    continue;
                 }
 
                 // Sum days this student was on a mess cut that overlaps the billing month
@@ -72,6 +82,7 @@ class MessBillController extends Controller
 
                 // Avoid duplicate mess bills for the same student + period
                 $period = $start->format('F Y');
+
                 $exists = Invoice::where('student_id', $student->id)
                     ->where('period', "Mess Fee - {$period}")
                     ->exists();
@@ -81,7 +92,7 @@ class MessBillController extends Controller
                     continue;
                 }
 
-                Invoice::create([
+                $invoice = Invoice::create([
                     'invoice_no' => 'MSS-' . now()->format('Ymd') . '-' . Str::upper(Str::random(5)),
                     'student_id' => $student->id,
                     'period' => "Mess Fee - {$period}",
@@ -95,6 +106,38 @@ class MessBillController extends Controller
             }
         });
 
-        return back()->with('status', "Mess bills generated: {$created} created, {$skipped} skipped (already billed or no rate set).");
+        // Activity log
+        ActivityLogger::log(
+            'mess_bills_generated',
+            "Mess bills generated for {$start->format('F Y')}: {$created} created, {$skipped} skipped."
+        );
+
+        return back()->with(
+            'status',
+            "Mess bills generated: {$created} created, {$skipped} skipped (already billed or no rate set)."
+        );
+    }
+
+    public function index()
+    {
+        $invoices = Invoice::with('student')
+            ->where('period', 'like', 'Mess Fee - %')
+            ->latest()
+            ->paginate(20);
+
+        return view('mess-bills.index', compact('invoices'));
+    }
+
+    public function show(Invoice $invoice)
+    {
+        // Only allow mess-fee invoices to be viewed here
+        abort_unless(
+            str_starts_with($invoice->period, 'Mess Fee - '),
+            404
+        );
+
+        $invoice->load('student');
+
+        return view('mess-bills.show', compact('invoice'));
     }
 }

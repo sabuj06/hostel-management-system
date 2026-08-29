@@ -12,21 +12,9 @@ class Student extends Model
     use SoftDeletes;
 
     protected $fillable = [
-        'user_id',
-        'student_uid',
-        'name',
-        'email',
-        'phone',
-        'gender',
-        'date_of_birth',
-        'course',
-        'department',
-        'session',
-        'address',
-        'photo_path',
-        'document_path',
-        'admission_date',
-        'status',
+        'user_id', 'student_uid', 'qr_token', 'name', 'email', 'phone', 'gender',
+        'date_of_birth', 'course', 'department', 'session', 'address',
+        'photo_path', 'document_path', 'admission_date', 'status',
     ];
 
     protected function casts(): array
@@ -37,22 +25,10 @@ class Student extends Model
         ];
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | User
-    |--------------------------------------------------------------------------
-    */
-
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
     }
-
-    /*
-    |--------------------------------------------------------------------------
-    | Guardians
-    |--------------------------------------------------------------------------
-    */
 
     public function guardians(): HasMany
     {
@@ -65,116 +41,78 @@ class Student extends Model
             ?? $this->guardians()->first();
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Room Allocations
-    |--------------------------------------------------------------------------
-    */
-
     public function allocations(): HasMany
     {
         return $this->hasMany(RoomAllocation::class);
     }
-
-    // The bed/room the student currently occupies, if any
-    public function currentAllocation(): \Illuminate\Database\Eloquent\Relations\HasOne
-    {
-        return $this->hasOne(RoomAllocation::class)
-            ->where('status', 'active')
-            ->latestOfMany();
-    }
-
-    public function scopeUnallocated($query)
-    {
-        return $query->whereDoesntHave(
-            'allocations',
-            fn ($q) => $q->where('status', 'active')
-        );
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | Complaints
-    |--------------------------------------------------------------------------
-    */
 
     public function complaints(): HasMany
     {
         return $this->hasMany(Complaint::class);
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Invoices
-    |--------------------------------------------------------------------------
-    */
-
     public function invoices(): HasMany
     {
         return $this->hasMany(Invoice::class);
     }
-
-    /*
-    |--------------------------------------------------------------------------
-    | Mess Cuts
-    |--------------------------------------------------------------------------
-    */
 
     public function messCuts(): HasMany
     {
         return $this->hasMany(MessCut::class);
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Chat Messages
-    |--------------------------------------------------------------------------
-    */
-
     public function chatMessages(): HasMany
     {
         return $this->hasMany(ChatMessage::class);
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Attendance
-    |--------------------------------------------------------------------------
-    */
+    public function documents(): HasMany
+    {
+        return $this->hasMany(StudentDocument::class);
+    }
+
+    // Generates a unique QR token on first use (existing students won't have
+    // one from before this feature existed) — call this before rendering a QR code.
+    public function ensureQrToken(): string
+    {
+        if (! $this->qr_token) {
+            do {
+                $token = \Illuminate\Support\Str::random(32);
+            } while (self::where('qr_token', $token)->exists());
+
+            $this->update(['qr_token' => $token]);
+        }
+
+        return $this->qr_token;
+    }
 
     public function attendances(): HasMany
     {
         return $this->hasMany(Attendance::class);
     }
 
-    // Convenience relation used with eager-load constraints
+    // Convenience relation used with eager-load constraints, e.g.
+    // Student::with(['attendanceOn' => fn($q) => $q->where('date', $date)])
     public function attendanceOn(): HasMany
     {
         return $this->hasMany(Attendance::class);
     }
-
-    /*
-    |--------------------------------------------------------------------------
-    | Leave Requests
-    |--------------------------------------------------------------------------
-    */
 
     public function leaveRequests(): HasMany
     {
         return $this->hasMany(LeaveRequest::class);
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Student Documents
-    |--------------------------------------------------------------------------
-    |
-    | NID, Birth Certificate, Photo etc.
-    |
-    */
-
-    public function documents(): HasMany
+    // The bed/room the student currently occupies, if any
+    // A real relation (not a plain method) so it works with ->with(), ->load(),
+    // and property access ($student->currentAllocation) consistently everywhere.
+    public function currentAllocation(): \Illuminate\Database\Eloquent\Relations\HasOne
     {
-        return $this->hasMany(StudentDocument::class);
+        return $this->hasOne(RoomAllocation::class)->where('status', 'active')->latestOfMany();
+    }
+
+    public function scopeUnallocated($query)
+    {
+        return $query->whereDoesntHave('allocations', fn ($q) => $q->where('status', 'active'));
     }
 }

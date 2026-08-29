@@ -13,6 +13,7 @@ use App\Models\Visitor;
 use App\Services\ForecastingService;
 use App\Services\ReportInsightService;
 use Illuminate\Http\Request;
+use App\Models\Attendance;
 use Illuminate\Support\Facades\DB;
 
 class ReportController extends Controller
@@ -32,11 +33,11 @@ class ReportController extends Controller
         $trendInsights = $this->forecasting->trendInsights();
         $visitorPeakHours = $this->forecasting->visitorPeakHours();
         $messForecast = $this->forecasting->messDemandForecast();
-
+        $attendanceSummary = $this->buildAttendanceSummary();
         return view('reports.index', compact(
             'summary', 'occupancy', 'revenueTrend',
             'complaintsByStatus', 'complaintsByCategory', 'roomTypeBreakdown',
-            'trendInsights', 'visitorPeakHours', 'messForecast'
+            'trendInsights', 'visitorPeakHours', 'messForecast','attendanceSummary'
         ));
     }
 
@@ -138,6 +139,61 @@ class ReportController extends Controller
         return [
             'labels' => $rows->keys()->map(fn ($k) => ucfirst($k))->toArray(),
             'data' => $rows->values()->toArray(),
+        ];
+
+    }
+
+        // Attendance report: last 30 days overview + per-student percentage,
+    // sorted so the students with the worst attendance surface first —
+    // that is the list a warden actually needs to act on.
+    private function buildAttendanceSummary(): array
+    {
+        $from = now()->subDays(29)->format('Y-m-d');
+        $to = now()->format('Y-m-d');
+
+        $rows = Attendance::whereBetween('date', [$from, $to])
+            ->select('status', DB::raw('count(*) as total'))
+            ->groupBy('status')
+            ->pluck('total', 'status');
+
+        $overview = [
+            'present' => $rows['present'] ?? 0,
+            'absent' => $rows['absent'] ?? 0,
+            'on_leave' => $rows['on_leave'] ?? 0,
+            'late' => Attendance::whereBetween('date', [$from, $to])->where('is_late', true)->count(),
+        ];
+
+        // Per-student attendance % over the same window, active students only
+        $students = Student::where('status', 'active')
+            ->withCount([
+                'attendances as present_count' => fn ($q) => $q->whereBetween('date', [$from, $to])->where('status', 'present'),
+                'attendances as marked_count' => fn ($q) => $q->whereBetween('date', [$from, $to]),
+            ])
+            ->get()
+            ->map(function ($student) {
+                $percentage = $student->marked_count > 0
+                    ? round(($student->present_count / $student->marked_count) * 100, 1)
+                    : null;
+
+                return [
+                    'name' => $student->name,
+                    'student_uid' => $student->student_uid,
+                    'present_count' => $student->present_count,
+                    'marked_count' => $student->marked_count,
+                    'percentage' => $percentage,
+                ];
+            })
+            ->filter(fn ($s) => $s['marked_count'] > 0)
+            ->sortBy('percentage')
+            ->values()
+            ->take(10)
+            ->toArray();
+
+        return [
+            'from' => $from,
+            'to' => $to,
+            'overview' => $overview,
+            'low_attendance_students' => $students,
         ];
     }
 }

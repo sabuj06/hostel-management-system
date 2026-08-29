@@ -9,6 +9,7 @@ use App\Models\Hostel;
 use App\Models\LeaveRequest;
 use App\Models\Student;
 use Illuminate\Http\Request;
+use App\ActivityLogger;
 
 class AttendanceController extends Controller
 {
@@ -18,23 +19,30 @@ class AttendanceController extends Controller
         $date = $request->get('date', now()->format('Y-m-d'));
 
         $students = Student::where('status', 'active')
-            ->with(['currentAllocation.room', 'attendanceOn' => function ($q) use ($date) {
-                $q->where('date', $date);
-            }])
+            ->with([
+                'currentAllocation.room',
+                'attendanceOn' => function ($q) use ($date) {
+                    $q->where('date', $date);
+                }
+            ])
             ->orderBy('name')
             ->get();
 
-        // Students currently on approved leave for this date — pre-marked as on_leave
+        // Students currently on approved leave for this date
         $onLeaveIds = LeaveRequest::where('status', 'approved')
             ->whereDate('from_date', '<=', $date)
             ->whereDate('to_date', '>=', $date)
             ->pluck('student_id')
             ->toArray();
 
-        return view('attendance.index', compact('students', 'date', 'onLeaveIds'));
+        return view('attendance.index', compact(
+            'students',
+            'date',
+            'onLeaveIds'
+        ));
     }
 
-    // AJAX: mark/update a single student's attendance for a date — instant save
+    // AJAX: mark/update a single student's attendance for a date
     public function mark(Request $request)
     {
         $data = $request->validate([
@@ -44,24 +52,59 @@ class AttendanceController extends Controller
             'check_in_time' => ['nullable', 'date_format:H:i'],
         ]);
 
-        $student = Student::with('currentAllocation.room.floor.block.hostel')->findOrFail($data['student_id']);
+        $student = Student::with(
+            'currentAllocation.room.floor.block.hostel'
+        )->findOrFail($data['student_id']);
 
         $isLate = false;
-        if (! empty($data['check_in_time']) && $data['status'] === 'present') {
+
+        if (
+            !empty($data['check_in_time']) &&
+            $data['status'] === 'present'
+        ) {
             $hostelId = $student->currentAllocation?->room?->floor?->block?->hostel_id;
-            $curfew = $hostelId ? CurfewSetting::where('hostel_id', $hostelId)->first() : null;
+
+            $curfew = $hostelId
+                ? CurfewSetting::where('hostel_id', $hostelId)->first()
+                : null;
+
             $cutoff = $curfew->curfew_time ?? '22:00:00';
+
             $isLate = $data['check_in_time'] > substr($cutoff, 0, 5);
         }
 
+        // Get old attendance before updating
+        $existing = Attendance::where('student_id', $data['student_id'])
+            ->where('date', $data['date'])
+            ->first();
+
+        $oldValues = $existing?->toArray();
+
+        // Create or update attendance
         $attendance = Attendance::updateOrCreate(
-            ['student_id' => $data['student_id'], 'date' => $data['date']],
+            [
+                'student_id' => $data['student_id'],
+                'date' => $data['date'],
+            ],
             [
                 'status' => $data['status'],
                 'check_in_time' => $data['check_in_time'] ?? null,
                 'is_late' => $isLate,
                 'marked_by' => $request->user()->id,
             ]
+        );
+
+        // Activity action
+        $action = $existing ? 'updated' : 'created';
+
+        // Activity log
+        ActivityLogger::log(
+            action: $action,
+            module: 'attendance',
+            description: "Attendance {$action} for {$student->name} on {$data['date']}: {$data['status']}",
+            subject: $attendance,
+            oldValues: $oldValues,
+            newValues: $attendance->fresh()->toArray()
         );
 
         return response()->json([
@@ -71,35 +114,58 @@ class AttendanceController extends Controller
         ]);
     }
 
-    // AJAX: bulk mark all currently-unmarked students as present for the date
+    // AJAX: bulk mark all currently-unmarked students as present
     public function markAllPresent(Request $request)
     {
-        $data = $request->validate(['date' => ['required', 'date']]);
+        $data = $request->validate([
+            'date' => ['required', 'date'],
+        ]);
 
-        $markedStudentIds = Attendance::where('date', $data['date'])->pluck('student_id');
+        $markedStudentIds = Attendance::where('date', $data['date'])
+            ->pluck('student_id');
 
         $students = Student::where('status', 'active')
             ->whereNotIn('id', $markedStudentIds)
             ->get();
 
         foreach ($students as $student) {
-            Attendance::create([
+
+            $attendance = Attendance::create([
                 'student_id' => $student->id,
                 'date' => $data['date'],
                 'status' => 'present',
                 'marked_by' => $request->user()->id,
             ]);
+
+            // Activity log for every student
+            ActivityLogger::log(
+                action: 'created',
+                module: 'attendance',
+                description: "Attendance marked present for {$student->name} on {$data['date']} (bulk)",
+                subject: $attendance,
+                newValues: $attendance->toArray()
+            );
         }
 
-        return response()->json(['success' => true, 'marked_count' => $students->count()]);
+        return response()->json([
+            'success' => true,
+            'marked_count' => $students->count(),
+        ]);
     }
 
     public function curfewSettings()
     {
         $hostels = Hostel::active()->get();
-        $settings = CurfewSetting::pluck('curfew_time', 'hostel_id');
 
-        return view('attendance.curfew-settings', compact('hostels', 'settings'));
+        $settings = CurfewSetting::pluck(
+            'curfew_time',
+            'hostel_id'
+        );
+
+        return view(
+            'attendance.curfew-settings',
+            compact('hostels', 'settings')
+        );
     }
 
     public function saveCurfewSettings(Request $request)
@@ -110,9 +176,45 @@ class AttendanceController extends Controller
         ]);
 
         foreach ($data['curfew_times'] as $hostelId => $time) {
-            CurfewSetting::updateOrCreate(['hostel_id' => $hostelId], ['curfew_time' => $time]);
+
+            // Old setting
+            $existing = CurfewSetting::where(
+                'hostel_id',
+                $hostelId
+            )->first();
+
+            $oldValues = $existing?->toArray();
+
+            // Create / update
+            $setting = CurfewSetting::updateOrCreate(
+                ['hostel_id' => $hostelId],
+                ['curfew_time' => $time]
+            );
+
+            $action = $existing ? 'updated' : 'created';
+
+            $hostel = Hostel::find($hostelId);
+
+            // Activity log
+            ActivityLogger::log(
+                action: $action,
+                module: 'attendance',
+                description: "Curfew setting {$action} for " .
+                    ($hostel?->name ?? "Hostel #{$hostelId}") .
+                    " to {$time}",
+                subject: $setting,
+                oldValues: $oldValues,
+                newValues: $setting->fresh()->toArray()
+            );
         }
 
-        return back()->with('status', 'Curfew settings updated successfully.');
+        return back()->with(
+            'status',
+            'Curfew settings updated successfully.'
+        );
     }
+
+    
+
+    
 }

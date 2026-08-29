@@ -22,10 +22,17 @@
                 <label class="form-label">Month</label>
                 <input type="month" name="month" class="form-control" value="{{ now()->format('Y-m') }}" required>
             </div>
-            <button type="submit" class="btn btn-primary" id="generate-btn">
-                <i class="bi bi-receipt"></i> Generate Mess Bills
-            </button>
-            <a href="{{ route('mess-cuts.index') }}" class="btn btn-light">Cancel</a>
+          <button type="submit" class="btn btn-primary" id="generate-btn">
+    <i class="bi bi-receipt"></i> Generate Mess Bills
+</button>
+
+<a href="{{ route('invoices.index') }}" class="btn btn-outline-primary">
+    <i class="bi bi-list-ul"></i> View Generated Bills (Invoices)
+</a>
+
+<a href="{{ route('mess-cuts.index') }}" class="btn btn-light">
+    Cancel
+</a>
         </form>
     </div>
 </div>

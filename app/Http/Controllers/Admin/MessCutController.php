@@ -8,6 +8,7 @@ use App\Models\MessCut;
 use App\Models\MessRate;
 use App\Models\Student;
 use Illuminate\Http\Request;
+use App\ActivityLogger;
 
 class MessCutController extends Controller
 {
@@ -15,7 +16,9 @@ class MessCutController extends Controller
     {
         $messCuts = MessCut::with('student', 'markedBy')
             ->when($request->search, function ($q) use ($request) {
-                $q->whereHas('student', fn ($q2) => $q2->where('name', 'like', "%{$request->search}%"));
+                $q->whereHas('student', fn ($q2) =>
+                    $q2->where('name', 'like', "%{$request->search}%")
+                );
             })
             ->latest()
             ->paginate(15)
@@ -40,14 +43,33 @@ class MessCutController extends Controller
             'reason' => ['nullable', 'string', 'max:255'],
         ]);
 
-        MessCut::create([...$data, 'marked_by' => $request->user()->id]);
+        $messCut = MessCut::create([
+            ...$data,
+            'marked_by' => $request->user()->id,
+        ]);
 
-        return redirect()->route('mess-cuts.index')->with('status', 'Mess cut recorded successfully.');
+        ActivityLogger::log(
+            'mess_cut_created',
+            "Mess cut recorded for student ID {$messCut->student_id} from {$messCut->from_date} to {$messCut->to_date}"
+        );
+
+        return redirect()
+            ->route('mess-cuts.index')
+            ->with('status', 'Mess cut recorded successfully.');
     }
 
     public function destroy(MessCut $messCut)
     {
+        $studentId = $messCut->student_id;
+        $fromDate = $messCut->from_date;
+        $toDate = $messCut->to_date;
+
         $messCut->delete();
+
+        ActivityLogger::log(
+            'mess_cut_deleted',
+            "Mess cut removed for student ID {$studentId} from {$fromDate} to {$toDate}"
+        );
 
         return back()->with('status', 'Mess cut removed successfully.');
     }
@@ -68,7 +90,15 @@ class MessCutController extends Controller
         ]);
 
         foreach ($data['rates'] as $hostelId => $rate) {
-            MessRate::updateOrCreate(['hostel_id' => $hostelId], ['rate_per_day' => $rate]);
+            MessRate::updateOrCreate(
+                ['hostel_id' => $hostelId],
+                ['rate_per_day' => $rate]
+            );
+
+            ActivityLogger::log(
+                'mess_rate_updated',
+                "Mess rate updated for hostel ID {$hostelId}: ₹{$rate} per day"
+            );
         }
 
         return back()->with('status', 'Mess rates updated successfully.');

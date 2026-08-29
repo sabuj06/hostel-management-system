@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Role;
 use App\Models\User;
+use App\Services\ActivityLogService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rules\Password;
@@ -20,7 +21,10 @@ class UserController extends Controller
                         ->orWhere('email', 'like', "%{$request->search}%");
                 });
             })
-            ->when($request->role_id, fn ($q) => $q->where('role_id', $request->role_id))
+            ->when(
+                $request->role_id,
+                fn ($q) => $q->where('role_id', $request->role_id)
+            )
             ->latest()
             ->paginate(10)
             ->withQueryString();
@@ -37,8 +41,10 @@ class UserController extends Controller
         return view('users.create', compact('roles'));
     }
 
-    public function store(Request $request)
-    {
+    public function store(
+        Request $request,
+        ActivityLogService $activityLogService
+    ) {
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'email', 'unique:users,email'],
@@ -50,9 +56,19 @@ class UserController extends Controller
 
         $data['password'] = Hash::make($data['password']);
 
-        User::create($data);
+        $user = User::create($data);
 
-        return redirect()->route('users.index')->with('status', 'User created successfully.');
+        $activityLogService->log(
+            action: 'created',
+            module: 'users',
+            description: "User '{$user->name}' ({$user->email}) created",
+            subject: $user,
+            newValues: $user->toArray()
+        );
+
+        return redirect()
+            ->route('users.index')
+            ->with('status', 'User created successfully.');
     }
 
     public function edit(User $user)
@@ -62,48 +78,126 @@ class UserController extends Controller
         return view('users.edit', compact('user', 'roles'));
     }
 
-    public function update(Request $request, User $user)
-    {
+    public function update(
+        Request $request,
+        User $user,
+        ActivityLogService $activityLogService
+    ) {
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
-            'email' => ['required', 'email', 'unique:users,email,' . $user->id],
+            'email' => [
+                'required',
+                'email',
+                'unique:users,email,' . $user->id
+            ],
             'phone' => ['nullable', 'string', 'max:20'],
             'role_id' => ['required', 'exists:roles,id'],
-            'password' => ['nullable', 'confirmed', Password::min(8)],
+            'password' => [
+                'nullable',
+                'confirmed',
+                Password::min(8)
+            ],
             'status' => ['required', 'in:active,inactive'],
         ]);
 
-        if (! empty($data['password'])) {
+        $oldValues = $user->toArray();
+
+        if (!empty($data['password'])) {
             $data['password'] = Hash::make($data['password']);
         } else {
             unset($data['password']);
         }
 
         $user->update($data);
+        $user->refresh();
 
-        return redirect()->route('users.index')->with('status', 'User updated successfully.');
+        $activityLogService->log(
+            action: 'updated',
+            module: 'users',
+            description: "User '{$user->name}' ({$user->email}) updated",
+            subject: $user,
+            oldValues: $oldValues,
+            newValues: $user->toArray()
+        );
+
+        return redirect()
+            ->route('users.index')
+            ->with('status', 'User updated successfully.');
     }
 
-    public function destroy(Request $request, User $user)
-    {
+    public function destroy(
+        Request $request,
+        User $user,
+        ActivityLogService $activityLogService
+    ) {
         if ($user->id === $request->user()->id) {
-            return back()->with('status', 'You cannot delete your own account.');
+            return back()->with(
+                'status',
+                'You cannot delete your own account.'
+            );
         }
+
+        $oldValues = $user->toArray();
+
+        $userName = $user->name;
+        $userEmail = $user->email;
 
         $user->delete();
 
-        return back()->with('status', 'User deleted successfully.');
+        $activityLogService->log(
+            action: 'deleted',
+            module: 'users',
+            description: "User '{$userName}' ({$userEmail}) deleted",
+            subject: $user,
+            oldValues: $oldValues
+        );
+
+        return back()->with(
+            'status',
+            'User deleted successfully.'
+        );
     }
 
-    // AJAX: quick active/inactive toggle from the list page
-    public function toggleStatus(Request $request, User $user)
-    {
+    public function toggleStatus(
+        Request $request,
+        User $user,
+        ActivityLogService $activityLogService
+    ) {
         if ($user->id === $request->user()->id) {
-            return response()->json(['success' => false, 'message' => 'You cannot deactivate your own account.'], 422);
+            return response()->json([
+                'success' => false,
+                'message' => 'You cannot deactivate your own account.'
+            ], 422);
         }
 
-        $user->update(['status' => $user->status === 'active' ? 'inactive' : 'active']);
+        $oldStatus = $user->status;
 
-        return response()->json(['success' => true, 'status' => $user->status]);
+        $user->update([
+            'status' => $user->status === 'active'
+                ? 'inactive'
+                : 'active'
+        ]);
+
+        $user->refresh();
+
+        $activityLogService->log(
+            action: 'status_changed',
+            module: 'users',
+            description:
+                "User '{$user->name}' status changed from "
+                . "{$oldStatus} to {$user->status}",
+            subject: $user,
+            oldValues: [
+                'status' => $oldStatus,
+            ],
+            newValues: [
+                'status' => $user->status,
+            ]
+        );
+
+        return response()->json([
+            'success' => true,
+            'status' => $user->status
+        ]);
     }
 }

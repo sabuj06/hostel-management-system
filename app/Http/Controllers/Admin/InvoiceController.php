@@ -9,22 +9,33 @@ use App\Models\Student;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use App\ActivityLogger;
+use App\Http\Controllers\Admin\InvoiceController;
 
 class InvoiceController extends Controller
 {
     public function index(Request $request)
     {
         $invoices = Invoice::with('student', 'feeStructure')
-            ->when($request->status, fn ($q) => $q->where('status', $request->status))
+            ->when(
+                $request->status,
+                fn ($q) => $q->where('status', $request->status)
+            )
             ->when($request->search, function ($q) use ($request) {
-                $q->whereHas('student', fn ($q2) => $q2->where('name', 'like', "%{$request->search}%")
-                    ->orWhere('student_uid', 'like', "%{$request->search}%"));
+                $q->whereHas('student', fn ($q2) =>
+                    $q2->where('name', 'like', "%{$request->search}%")
+                        ->orWhere(
+                            'student_uid',
+                            'like',
+                            "%{$request->search}%"
+                        )
+                );
             })
             ->latest()
             ->paginate(10)
             ->withQueryString();
 
-        // Mark past-due unpaid/partial invoices as overdue for accurate display
+        // Mark past-due unpaid/partial invoices as overdue
         Invoice::whereIn('status', ['unpaid', 'partial'])
             ->where('due_date', '<', now())
             ->update(['status' => 'overdue']);
@@ -37,7 +48,10 @@ class InvoiceController extends Controller
         $students = Student::where('status', 'active')->get();
         $feeStructures = FeeStructure::active()->get();
 
-        return view('invoices.create', compact('students', 'feeStructures'));
+        return view(
+            'invoices.create',
+            compact('students', 'feeStructures')
+        );
     }
 
     public function store(Request $request)
@@ -52,9 +66,16 @@ class InvoiceController extends Controller
             'remarks' => ['nullable', 'string'],
         ]);
 
-        DB::transaction(function () use ($data, $request) {
+        $createdInvoices = [];
+
+        DB::transaction(function () use (
+            $data,
+            $request,
+            &$createdInvoices
+        ) {
             foreach ($data['student_ids'] as $studentId) {
-                Invoice::create([
+
+                $invoice = Invoice::create([
                     'invoice_no' => $this->generateInvoiceNo(),
                     'student_id' => $studentId,
                     'fee_structure_id' => $data['fee_structure_id'],
@@ -65,36 +86,102 @@ class InvoiceController extends Controller
                     'generated_by' => $request->user()->id,
                     'remarks' => $data['remarks'] ?? null,
                 ]);
+
+                $createdInvoices[] = $invoice;
             }
         });
 
+        /*
+        |--------------------------------------------------------------------------
+        | Activity Log
+        |--------------------------------------------------------------------------
+        */
+
+        foreach ($createdInvoices as $invoice) {
+
+            $invoice->load('student', 'feeStructure');
+
+            ActivityLogger::log(
+                action: 'created',
+                module: 'invoices',
+                description: "Invoice {$invoice->invoice_no} created for {$invoice->student->name} - Amount ₹{$invoice->amount}",
+                subject: $invoice,
+                newValues: $invoice->fresh()->toArray()
+            );
+        }
+
         $count = count($data['student_ids']);
 
-        return redirect()->route('invoices.index')->with('status', "{$count} invoice(s) generated successfully.");
+        return redirect()
+            ->route('invoices.index')
+            ->with(
+                'status',
+                "{$count} invoice(s) generated successfully."
+            );
     }
 
     public function show(Invoice $invoice)
     {
-        $invoice->load('student', 'feeStructure', 'payments.receivedBy');
+        $invoice->load(
+            'student',
+            'feeStructure',
+            'payments.receivedBy'
+        );
 
-        return view('invoices.show', compact('invoice'));
+        return view(
+            'invoices.show',
+            compact('invoice')
+        );
     }
 
     public function destroy(Invoice $invoice)
     {
         if ($invoice->payments()->exists()) {
-            return back()->with('status', 'Cannot delete an invoice that already has payments recorded.');
+            return back()->with(
+                'status',
+                'Cannot delete an invoice that already has payments recorded.'
+            );
         }
+
+        // Save old data before deleting
+        $oldValues = $invoice->toArray();
+
+        $invoiceNo = $invoice->invoice_no;
+
+        $studentName = $invoice->student?->name ?? 'Unknown Student';
 
         $invoice->delete();
 
-        return redirect()->route('invoices.index')->with('status', 'Invoice deleted successfully.');
+        /*
+        |--------------------------------------------------------------------------
+        | Activity Log
+        |--------------------------------------------------------------------------
+        */
+
+        ActivityLogger::log(
+            action: 'deleted',
+            module: 'invoices',
+            description: "Invoice {$invoiceNo} deleted for {$studentName}",
+            subject: $invoice,
+            oldValues: $oldValues
+        );
+
+        return redirect()
+            ->route('invoices.index')
+            ->with(
+                'status',
+                'Invoice deleted successfully.'
+            );
     }
 
     private function generateInvoiceNo(): string
     {
         do {
-            $no = 'INV-' . now()->format('Ymd') . '-' . Str::upper(Str::random(5));
+            $no = 'INV-' .
+                now()->format('Ymd') .
+                '-' .
+                Str::upper(Str::random(5));
+
         } while (Invoice::where('invoice_no', $no)->exists());
 
         return $no;

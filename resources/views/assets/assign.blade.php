@@ -8,8 +8,8 @@
     <div class="card-body">
         <h6 class="mb-3">{{ $asset->name }} <span class="text-muted small">(Available: {{ $asset->quantity_available }})</span></h6>
 
-        <form method="POST" action="{{ route('assets.assign-store', $asset) }}">
-            @csrf
+            <form method="POST" action="{{ route('assets.assign.store', $asset) }}">
+        @csrf
 
             <div class="mb-3">
                 <label class="form-label">Room</label>
