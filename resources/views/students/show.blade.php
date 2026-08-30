@@ -18,8 +18,19 @@
                     <li><i class="bi bi-flag me-2"></i>
                         <span class="badge bg-{{ $student->status === 'active' ? 'success' : 'secondary' }}">{{ ucfirst($student->status) }}</span>
                     </li>
+                    <li class="mt-2"><i class="bi bi-shield-lock me-2"></i>
+                        @if($student->user)
+                            <span class="badge bg-success">Login Linked</span>
+                            <span class="text-muted small">{{ $student->user->email }}</span>
+                        @else
+                            <span class="badge bg-warning text-dark">No Login Linked</span>
+                        @endif
+                    </li>
                 </ul>
                 <a href="{{ route('students.edit', $student) }}" class="btn btn-sm btn-outline-primary mt-3">Edit Profile</a>
+                <a href="{{ route('students.id-card', $student) }}" class="btn btn-sm btn-outline-secondary mt-3">
+                    <i class="bi bi-qr-code"></i> ID Card
+                </a>
             </div>
         </div>
 

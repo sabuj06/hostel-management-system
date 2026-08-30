@@ -4,10 +4,9 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Student;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
-use App\ActivityLogger;
-use App\Models\AttendanceQrToken;
 
 class StudentController extends Controller
 {
@@ -31,91 +30,55 @@ class StudentController extends Controller
 
     public function create()
     {
-        return view('students.create');
+        $availableUsers = $this->availableStudentUsers();
+
+        return view('students.create', compact('availableUsers'));
     }
 
     public function store(Request $request)
     {
-           $data = $this->validated($request);
-    $data['student_uid'] = $data['student_uid'] ?? $this->generateUid();
+        $data = $this->validated($request);
+        $data['student_uid'] = $data['student_uid'] ?? $this->generateUid();
 
-    $student = Student::create($data);
+        $student = Student::create($data);
 
-    ActivityLogger::log(
-        action: 'created',
-        module: 'students',
-        description: "Student created: {$student->name} ({$student->student_uid})",
-        subject: $student,
-        newValues: $student->toArray()
-    );
-
-    return redirect()
-        ->route('students.show', $student)
-        ->with('status', 'Student added successfully. Now you can add guardian(s).');
+        return redirect()->route('students.show', $student)->with('status', 'Student added successfully. Now you can add guardian(s).');
     }
 
     public function show(Student $student)
     {
-        $student->load('guardians', 'allocations.room', 'allocations.bed');
+        $student->load('guardians', 'allocations.room', 'allocations.bed', 'user');
 
         return view('students.show', compact('student'));
     }
 
     public function edit(Student $student)
     {
-        return view('students.edit', compact('student'));
+        $availableUsers = $this->availableStudentUsers($student->id);
+
+        return view('students.edit', compact('student', 'availableUsers'));
     }
 
     public function update(Request $request, Student $student)
     {
         $data = $this->validated($request, $student->id);
+        $student->update($data);
 
-    $oldValues = $student->getOriginal();
-
-    $student->update($data);
-
-    $student->refresh();
-
-    ActivityLogger::log(
-        action: 'updated',
-        module: 'students',
-        description: "Student updated: {$student->name} ({$student->student_uid})",
-        subject: $student,
-        oldValues: $oldValues,
-        newValues: $student->toArray()
-    );
-
-    return redirect()
-        ->route('students.show', $student)
-        ->with('status', 'Student updated successfully.');
-
+        return redirect()->route('students.show', $student)->with('status', 'Student updated successfully.');
     }
 
     public function destroy(Student $student)
     {
-        $oldValues = $student->toArray();
-    $studentName = $student->name;
-    $studentUid = $student->student_uid;
+        $student->delete();
 
-    $student->delete();
-
-    ActivityLogger::log(
-        action: 'deleted',
-        module: 'students',
-        description: "Student deleted: {$studentName} ({$studentUid})",
-        subject: $student,
-        oldValues: $oldValues
-    );
-
-    return redirect()
-        ->route('students.index')
-        ->with('status', 'Student deleted successfully.');
+        return redirect()->route('students.index')->with('status', 'Student deleted successfully.');
     }
 
     private function validated(Request $request, ?int $ignoreId = null): array
     {
         return $request->validate([
             'student_uid' => ['nullable', 'string', 'max:50', 'unique:students,student_uid,' . $ignoreId],
+            'user_id' => ['nullable', 'exists:users,id', 'unique:students,user_id,' . $ignoreId],
             'name' => ['required', 'string', 'max:255'],
             'email' => ['nullable', 'email', 'max:255'],
             'phone' => ['nullable', 'string', 'max:20'],
@@ -127,7 +90,24 @@ class StudentController extends Controller
             'address' => ['nullable', 'string'],
             'admission_date' => ['nullable', 'date'],
             'status' => ['required', 'in:active,inactive,left'],
+        ], [
+            'user_id.unique' => 'That login account is already linked to a different student.',
         ]);
+    }
+
+    // Login accounts (role = student) not already linked to another
+    // student profile — plus, when editing, the student's own current
+    // account (so the dropdown still shows their existing selection).
+    private function availableStudentUsers(?int $currentStudentId = null)
+    {
+        $linkedUserIds = Student::whereNotNull('user_id')
+            ->when($currentStudentId, fn ($q) => $q->where('id', '!=', $currentStudentId))
+            ->pluck('user_id');
+
+        return User::whereHas('role', fn ($q) => $q->where('name', 'student'))
+            ->whereNotIn('id', $linkedUserIds)
+            ->orderBy('name')
+            ->get();
     }
 
     private function generateUid(): string
@@ -138,39 +118,4 @@ class StudentController extends Controller
 
         return $uid;
     }
-
-    public function qrCode(Student $student)
-{
-    // পুরোনো active QR token invalid করে দিচ্ছি
-    AttendanceQrToken::where('student_id', $student->id)
-        ->where('used', false)
-        ->update([
-            'used' => true,
-            'used_at' => now(),
-        ]);
-
-    // নতুন 10-minute token
-    $qrToken = AttendanceQrToken::create([
-        'student_id' => $student->id,
-        'token' => Str::random(64),
-        'expires_at' => now()->addMinutes(10),
-        'used' => false,
-    ]);
-
-    ActivityLogger::log(
-        action: 'created',
-        module: 'attendance_qr',
-        description: "Attendance QR generated for student: {$student->name} ({$student->student_uid})",
-        subject: $student,
-        newValues: [
-            'qr_token_id' => $qrToken->id,
-            'expires_at' => $qrToken->expires_at,
-        ]
-    );
-
-    return view(
-        'students.qr-code',
-        compact('student', 'qrToken')
-    );
-}
 }

@@ -19,6 +19,22 @@
     </div>
 </div>
 
+<div class="mb-3">
+    <label class="form-label">Login Account (optional)</label>
+    <select name="user_id" class="form-select">
+        <option value="">— No login account linked —</option>
+        @foreach($availableUsers as $u)
+            <option value="{{ $u->id }}" @selected(old('user_id', $student->user_id ?? '') == $u->id)>
+                {{ $u->name }} ({{ $u->email }})
+            </option>
+        @endforeach
+    </select>
+    <div class="form-text">
+        Link this student to a "student" role login account so they can access the Student Portal.
+        Only unlinked student accounts are shown here.
+    </div>
+</div>
+
 <div class="row">
     <div class="col-md-6 mb-3">
         <label class="form-label">Email</label>
